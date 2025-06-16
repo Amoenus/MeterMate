@@ -262,8 +262,15 @@ async def _add_historical_statistic(
     state = hass.states.get(entity_id)
     unit = state.attributes.get("unit_of_measurement", "kWh") if state else "kWh"
 
-    # Create unique statistic ID
-    statistic_id = f"{DOMAIN}:{entity_entry.unique_id or entity_id.split('.')[1]}"
+    # Create unique statistic ID - must follow Home Assistant requirements
+    # External statistics need their own namespace, separate from entities
+    # Use a format like: metermate_stats:entity_name
+    entity_object_id = entity_id.split(".")[1] if "." in entity_id else entity_id
+    # Ensure the statistic ID is valid (lowercase, alphanumeric + underscores only)
+    entity_object_id = entity_object_id.lower().replace("-", "_")
+    statistic_id = f"{DOMAIN}_stats:{entity_object_id}"
+    
+    LOGGER.debug("Creating statistic with ID: %s", statistic_id)
 
     # Prepare metadata
     metadata = {
@@ -285,6 +292,9 @@ async def _add_historical_statistic(
 
     # Add to statistics database
     try:
+        LOGGER.debug("Adding external statistics with metadata: %s", metadata)
+        LOGGER.debug("Adding external statistics with data: %s", statistics)
+        
         # Suppress type checker warnings as we're constructing the data correctly
         async_add_external_statistics(hass, metadata, statistics)  # type: ignore[arg-type]
         LOGGER.info(
@@ -292,6 +302,8 @@ async def _add_historical_statistic(
         )
     except (ValueError, TypeError, AttributeError) as e:
         LOGGER.error("Failed to add external statistics for %s: %s", entity_id, str(e))
+        LOGGER.error("Metadata was: %s", metadata)
+        LOGGER.error("Statistics data was: %s", statistics)
         raise
 
 
