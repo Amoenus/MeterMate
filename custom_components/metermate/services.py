@@ -9,15 +9,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 from homeassistant.util import dt as dt_util
 
-# Import what we need for historical statistics
-try:
-    from homeassistant.components.recorder.statistics import (
-        async_add_external_statistics,
-    )
-
-    HAS_STATISTICS = True
-except ImportError:
-    HAS_STATISTICS = False
+# Historical statistics temporarily disabled to prevent loading issues
+HAS_STATISTICS = False
 
 from .const import (
     ATTR_END_DATE,
@@ -214,97 +207,27 @@ async def _import_statistic(
         "Processing statistic for %s: %s at %s", entity_id, new_total, timestamp
     )
 
-    # First, try to add to the statistics database for historical data
-    if HAS_STATISTICS:
-        try:
-            await _add_historical_statistic(hass, entity_id, timestamp, new_total)
-        except (ValueError, TypeError, AttributeError) as e:
-            LOGGER.warning(
-                "Failed to add historical statistic for %s: %s", entity_id, str(e)
-            )
+    # Temporarily disable external statistics to prevent HA from getting stuck
+    # Focus on updating the entity state properly
 
-    # Also update the current entity state for the most recent reading
-    current_time = dt_util.now()
+    # Update the current entity state
+    await _update_current_state(hass, entity_id, new_total)
 
-    # If this is today's data or the most recent data, also update current state
-    today_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    if timestamp >= today_start:
-        # This is today's data, update the current state
-        await _update_current_state(hass, entity_id, new_total)
-    else:
-        # This is historical data, just log that we processed it
-        LOGGER.info(
-            "Processed historical statistic for %s: %s at %s",
-            entity_id,
-            new_total,
-            timestamp,
-        )
+    LOGGER.info(
+        "Processed statistic for %s: %s (intended timestamp: %s)",
+        entity_id,
+        new_total,
+        timestamp,
+    )
 
 
-async def _add_historical_statistic(
-    hass: HomeAssistant, entity_id: str, timestamp: datetime, value: float
-) -> None:
-    """Add historical statistic to Home Assistant statistics database."""
-    if not HAS_STATISTICS:
-        LOGGER.warning("Statistics module not available, skipping historical data")
-        return
-
-    # Get entity information
-    entity_registry = async_get_entity_registry(hass)
-    entity_entry = entity_registry.async_get(entity_id)
-
-    if not entity_entry:
-        LOGGER.error("Entity entry not found for %s", entity_id)
-        return
-
-    # Get current state to get unit info
-    state = hass.states.get(entity_id)
-    unit = state.attributes.get("unit_of_measurement", "kWh") if state else "kWh"
-
-    # Create unique statistic ID - must follow Home Assistant requirements
-    # External statistics need their own namespace, separate from entities
-    # Use a format like: metermate_stats:entity_name
-    entity_object_id = entity_id.split(".")[1] if "." in entity_id else entity_id
-    # Ensure the statistic ID is valid (lowercase, alphanumeric + underscores only)
-    entity_object_id = entity_object_id.lower().replace("-", "_")
-    statistic_id = f"{DOMAIN}_stats:{entity_object_id}"
-
-    LOGGER.debug("Creating statistic with ID: %s", statistic_id)
-
-    # Prepare metadata
-    metadata = {
-        "has_mean": False,
-        "has_sum": True,
-        "name": entity_entry.name or entity_entry.original_name or entity_id,
-        "source": DOMAIN,
-        "statistic_id": statistic_id,
-        "unit_of_measurement": unit,
-    }
-
-    # Prepare statistics data
-    statistics = [
-        {
-            "start": timestamp,
-            "sum": value,
-        }
-    ]
-
-    # Add to statistics database
-    try:
-        LOGGER.debug("Adding external statistics with metadata: %s", metadata)
-        LOGGER.debug("Adding external statistics with data: %s", statistics)
-
-        # Suppress type checker warnings as we're constructing the data correctly
-        async_add_external_statistics(hass, metadata, statistics)  # type: ignore[arg-type]
-        LOGGER.info(
-            "Added historical statistic for %s: %s at %s", entity_id, value, timestamp
-        )
-    except (ValueError, TypeError, AttributeError) as e:
-        LOGGER.error("Failed to add external statistics for %s: %s", entity_id, str(e))
-        LOGGER.error("Metadata was: %s", metadata)
-        LOGGER.error("Statistics data was: %s", statistics)
-        raise
+# Temporarily disabled to prevent Home Assistant loading issues
+# async def _add_historical_statistic(
+#     hass: HomeAssistant, entity_id: str, timestamp: datetime, value: float
+# ) -> None:
+#     """Add historical statistic to Home Assistant statistics database."""
+#     # This function is temporarily disabled
+#     pass
 
 
 async def _update_current_state(
