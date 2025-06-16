@@ -42,14 +42,19 @@ class HistoricalDataHandler:
         return None
 
     def _get_or_create_metadata_id(
-        self, conn: sqlite3.Connection, statistic_id: str, unit: str, name: str
+        self,
+        conn: sqlite3.Connection,
+        statistic_id: str,
+        unit: str,
+        name: str,
+        source: str = DOMAIN,
     ) -> int | None:
         """Get or create metadata entry and return its ID."""
         try:
             # Check if metadata exists
             cursor = conn.execute(
-                "SELECT id FROM statistics_meta WHERE statistic_id = ?",
-                (statistic_id,),
+                "SELECT id FROM statistics_meta WHERE statistic_id = ? AND source = ?",
+                (statistic_id, source),
             )
             result = cursor.fetchone()
 
@@ -62,7 +67,7 @@ class HistoricalDataHandler:
                    (statistic_id, source, unit_of_measurement,
                     has_mean, has_sum, name)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (statistic_id, DOMAIN, unit, False, True, name),
+                (statistic_id, source, unit, False, True, name),
             )
             return cursor.lastrowid  # noqa: TRY300
 
@@ -101,8 +106,9 @@ class HistoricalDataHandler:
         # Convert timestamp to Unix epoch
         unix_timestamp = timestamp.timestamp()
 
-        # Create statistic_id from entity_id
-        statistic_id = entity_id.replace("sensor.", f"{DOMAIN}:")
+        # For historical data, use the original entity_id to integrate with Home Assistant's recorder statistics
+        # This ensures historical data appears in the Energy Dashboard
+        statistic_id = entity_id
 
         conn = None
         try:
@@ -110,9 +116,9 @@ class HistoricalDataHandler:
             conn = sqlite3.connect(db_path)
             conn.execute("BEGIN TRANSACTION")
 
-            # Get or create metadata
+            # Get or create metadata - use 'recorder' as source to match Home Assistant's native statistics
             metadata_id = self._get_or_create_metadata_id(
-                conn, statistic_id, unit, name
+                conn, statistic_id, unit, name, source="recorder"
             )
 
             if not metadata_id:
@@ -120,25 +126,33 @@ class HistoricalDataHandler:
                 return False
 
             # Check if data already exists for this timestamp
-            if self._timestamp_exists(conn, metadata_id, unix_timestamp):
-                LOGGER.warning(
-                    "Statistic already exists for %s at %s, skipping",
+            exists = self._timestamp_exists(conn, metadata_id, unix_timestamp)
+            if exists:
+                LOGGER.info(
+                    "Statistic already exists for %s at %s, updating with new value %s",
                     entity_id,
                     timestamp,
+                    value,
                 )
-                conn.rollback()
-                return False
+                # Update existing statistic
+                current_ts = time.time()
+                conn.execute(
+                    """UPDATE statistics
+                       SET state = ?, sum = ?, created_ts = ?
+                       WHERE metadata_id = ? AND start_ts = ?""",
+                    (value, value, current_ts, metadata_id, unix_timestamp),
+                )
+            else:
+                # Insert new statistic
+                current_ts = time.time()
+                conn.execute(
+                    """INSERT INTO statistics
+                       (metadata_id, start_ts, state, sum, created_ts)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (metadata_id, unix_timestamp, value, value, current_ts),
+                )
 
-            # Insert the statistic
-            current_ts = time.time()
-            conn.execute(
-                """INSERT INTO statistics
-                   (metadata_id, start_ts, state, sum, created_ts)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (metadata_id, unix_timestamp, value, value, current_ts),
-            )
-
-            # Also insert into short-term statistics if recent
+            # Also insert/update short-term statistics if recent
             days_ago = (dt_util.now().timestamp() - unix_timestamp) / (24 * 3600)
             if days_ago <= SHORT_TERM_STATISTICS_DAYS:
                 # Check if statistics_short_term table exists
@@ -147,8 +161,9 @@ class HistoricalDataHandler:
                     "WHERE type='table' AND name='statistics_short_term'"
                 )
                 if cursor.fetchone():
+                    # Use INSERT OR REPLACE for short-term statistics
                     conn.execute(
-                        """INSERT OR IGNORE INTO statistics_short_term
+                        """INSERT OR REPLACE INTO statistics_short_term
                            (metadata_id, start_ts, state, sum, created_ts)
                            VALUES (?, ?, ?, ?, ?)""",
                         (metadata_id, unix_timestamp, value, value, current_ts),
