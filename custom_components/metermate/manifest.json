@@ -1,12 +1,14 @@
 {
-  "domain": "integration_blueprint",
-  "name": "Integration blueprint",
+  "domain": "metermate",
+  "name": "MeterMate",
   "codeowners": [
     "@Amoenus"
   ],
   "config_flow": true,
   "documentation": "https://github.com/Amoenus/metermate",
-  "iot_class": "cloud_polling",
+  "iot_class": "local_push",
   "issue_tracker": "https://github.com/Amoenus/metermate/issues",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "dependencies": ["recorder"],
+  "requirements": []
 }
