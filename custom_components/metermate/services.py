@@ -314,17 +314,8 @@ async def _add_historical_statistic(
                 value,
                 timestamp,
             )
-
-            # Also update current state if this is the most recent data
-            current_state_value = 0.0
-            try:
-                if state.state not in ("unknown", "unavailable"):
-                    current_state_value = float(state.state)
-            except (ValueError, TypeError):
-                pass
-
-            if value > current_state_value:
-                await _update_current_state(hass, entity_id, value)
+            # Historical data imported successfully - do not update current state
+            # Historical readings should not affect the current sensor value
         else:
             LOGGER.warning(
                 "Failed to import historical statistic for %s. "
