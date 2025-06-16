@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.2/.schema/devbox.schema.json",
+  "packages": [
+    "python@3.13",
+    "uv@latest",
+    "git@latest",
+    "curl@latest",
+    "ruff@latest",
+    "ffmpeg@latest",
+    "libpcap@latest",
+    "gh@latest",
+    "fzf@latest"
+  ],
+  "shell": {
+  },
+  "env": {
+    "PYTHONPATH": ".",
+    "PYTHONUNBUFFERED": "1",
+    "HOMEASSISTANT_PORT": "8123"
+  }
+}
