@@ -269,7 +269,7 @@ async def _add_historical_statistic(
     # Ensure the statistic ID is valid (lowercase, alphanumeric + underscores only)
     entity_object_id = entity_object_id.lower().replace("-", "_")
     statistic_id = f"{DOMAIN}_stats:{entity_object_id}"
-    
+
     LOGGER.debug("Creating statistic with ID: %s", statistic_id)
 
     # Prepare metadata
@@ -294,7 +294,7 @@ async def _add_historical_statistic(
     try:
         LOGGER.debug("Adding external statistics with metadata: %s", metadata)
         LOGGER.debug("Adding external statistics with data: %s", statistics)
-        
+
         # Suppress type checker warnings as we're constructing the data correctly
         async_add_external_statistics(hass, metadata, statistics)  # type: ignore[arg-type]
         LOGGER.info(
