@@ -13,6 +13,16 @@ from homeassistant.util import dt as dt_util
 HAS_RECORDER = False
 HAS_STATISTICS = False
 
+try:
+    from homeassistant.components.recorder.statistics import (
+        StatisticData,
+        StatisticMetaData,
+        async_add_external_statistics,
+    )
+    HAS_STATISTICS = True
+except ImportError:
+    pass
+
 from .const import (
     ATTR_END_DATE,
     ATTR_ENTITY_ID,
@@ -57,6 +67,24 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         # Validate entity
         if not await _validate_entity(hass, entity_id):
             return
+
+        # Validate mode-specific required fields
+        if mode == MODE_PERIODIC:
+            start_date = call.data.get(ATTR_START_DATE)
+            end_date = call.data.get(ATTR_END_DATE)
+            if not start_date or not end_date:
+                LOGGER.error(
+                    "start_date and end_date are required for periodic mode"
+                )
+                return
+        elif mode == MODE_CUMULATIVE:
+            timestamp = call.data.get(ATTR_TIMESTAMP)
+            if not timestamp:
+                LOGGER.warning(
+                    "No timestamp provided for cumulative reading. "
+                    "Data will be recorded for current time. "
+                    "For historical data, provide a timestamp."
+                )
 
         # Get current state
         current_total = await _get_current_total(hass, entity_id)
@@ -139,6 +167,11 @@ async def _process_cumulative_reading(
     """Process a cumulative reading."""
     timestamp = call.data.get(ATTR_TIMESTAMP)
     if timestamp is None:
+        # If no timestamp provided, log a warning and use current time
+        LOGGER.warning(
+            "No timestamp provided for cumulative reading. Using current time. "
+            "Consider providing a timestamp for accurate historical data."
+        )
         timestamp = dt_util.now()
     elif timestamp.tzinfo is None:
         timestamp = dt_util.as_local(timestamp)
@@ -208,13 +241,94 @@ async def _import_statistic(
         "Processing statistic for %s: %s at %s", entity_id, new_total, timestamp
     )
 
-    # Simplified approach - just update the entity state
-    # Remove complex historical handling that might be causing issues
-    await _update_current_state(hass, entity_id, new_total)
+    # Try to import historical statistic if not today
+    current_date = dt_util.now().date()
+    statistic_date = timestamp.date()
+    
+    if statistic_date != current_date:
+        # This is historical data, try to import as historical statistic
+        await _add_historical_statistic(hass, entity_id, timestamp, new_total)
+    else:
+        # This is current data, update current state
+        await _update_current_state(hass, entity_id, new_total)
 
     LOGGER.info(
         "Processed statistic for %s: %s", entity_id, new_total
     )
+
+
+async def _add_historical_statistic(
+    hass: HomeAssistant, entity_id: str, timestamp: datetime, value: float
+) -> None:
+    """Add historical statistic to Home Assistant statistics database."""
+    if not HAS_STATISTICS:
+        LOGGER.warning(
+            "Statistics components not available. Cannot import historical data for %s",
+            entity_id,
+        )
+        # Fallback to updating current state
+        await _update_current_state(hass, entity_id, value)
+        return
+    
+    try:
+        # Get entity state for unit and device class
+        state = hass.states.get(entity_id)
+        if not state:
+            LOGGER.error("Entity %s not found for historical import", entity_id)
+            return
+        
+        unit = state.attributes.get("unit_of_measurement", "")
+        
+        # Create statistic metadata
+        metadata = StatisticMetaData(
+            source=DOMAIN,
+            statistic_id=f"{DOMAIN}:{entity_id.replace('sensor.', '')}",
+            unit_of_measurement=unit,
+            has_mean=False,
+            has_sum=True,
+            name=state.attributes.get("friendly_name", entity_id),
+        )
+        
+        # Create statistic data
+        statistic_data = StatisticData(
+            start=timestamp,
+            sum=value,
+            state=value,
+        )
+        
+        # Import the statistics
+        async_add_external_statistics(
+            hass,
+            metadata,
+            [statistic_data],
+        )
+        
+        LOGGER.info(
+            "Successfully imported historical statistic for %s: %s at %s",
+            entity_id,
+            value,
+            timestamp,
+        )
+        
+        # Also update current state if this is the most recent data
+        current_state_value = 0.0
+        try:
+            if state.state not in ("unknown", "unavailable"):
+                current_state_value = float(state.state)
+        except (ValueError, TypeError):
+            pass
+            
+        if value > current_state_value:
+            await _update_current_state(hass, entity_id, value)
+            
+    except (ValueError, TypeError, AttributeError, ImportError) as e:
+        LOGGER.error(
+            "Error importing historical statistic for %s: %s",
+            entity_id,
+            e,
+        )
+        # Fallback to updating current state
+        await _update_current_state(hass, entity_id, value)
 
 
 # Temporarily disabled to prevent Home Assistant loading issues
