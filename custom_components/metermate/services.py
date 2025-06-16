@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
-from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 from homeassistant.util import dt as dt_util
@@ -69,9 +68,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 hass, call, entity_id, value, initial_reading
             )
         elif mode == MODE_PERIODIC:
-            await _process_periodic_reading(
-                hass, call, entity_id, value, current_total
-            )
+            await _process_periodic_reading(hass, call, entity_id, value, current_total)
 
     hass.services.async_register(
         DOMAIN,
@@ -203,16 +200,56 @@ async def _import_statistic(
     hass: HomeAssistant, entity_id: str, timestamp: datetime, new_total: float
 ) -> None:
     """Import a statistic into Home Assistant."""
-    statistics = [
-        {
-            "statistic_id": entity_id,
-            "start": timestamp,
-            "state": new_total,
-            "sum": new_total,
-        }
-    ]
+    LOGGER.info("Updating statistic for %s: %s at %s", entity_id, new_total, timestamp)
 
-    await async_import_statistics(hass, statistics, "metermate")
+    # Try to find the entity object to update it properly
+    found_entity = False
+
+    # Debug: Log what we're looking for
+    LOGGER.debug("Looking for entity %s in entity platforms", entity_id)
+
+    # Search through all loaded entities to find our MeterMate sensor
+    for platform_key, domain_data in hass.data.get("entity_platform", {}).items():
+        LOGGER.debug("Checking platform: %s", platform_key)
+        if hasattr(domain_data, "entities"):
+            LOGGER.debug(
+                "Platform %s has %d entities", platform_key, len(domain_data.entities)
+            )
+            for entity in domain_data.entities:
+                if hasattr(entity, "entity_id"):
+                    LOGGER.debug("Found entity: %s", entity.entity_id)
+                    if entity.entity_id == entity_id and hasattr(
+                        entity, "update_value"
+                    ):
+                        await entity.update_value(new_total)
+                        found_entity = True
+                        LOGGER.debug(
+                            "Updated entity %s via update_value to %s",
+                            entity_id,
+                            new_total,
+                        )
+                        break
+
+    if not found_entity:
+        LOGGER.debug("Entity not found via platform search, using fallback")
+        # Fallback: update state directly but preserve all attributes
+        current_state = hass.states.get(entity_id)
+        if current_state:
+            # Preserve existing attributes and add our updates
+            new_attributes = dict(current_state.attributes)
+            new_attributes.update(
+                {
+                    "last_updated": timestamp.isoformat(),
+                    "last_reading": new_total,
+                }
+            )
+
+            hass.states.async_set(entity_id, str(new_total), attributes=new_attributes)
+            LOGGER.debug(
+                "Updated entity %s state via state machine to %s", entity_id, new_total
+            )
+        else:
+            LOGGER.error("Entity %s not found", entity_id)
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:

@@ -1,11 +1,16 @@
 add_reading:
   name: Add Reading
   description: Add a new meter reading to a MeterMate sensor.
-  target:
-    entity:
-      domain: sensor
-      integration: metermate
   fields:
+    entity_id:
+      name: Entity
+      description: The MeterMate sensor entity to add the reading to.
+      required: true
+      example: sensor.grid_electricity
+      selector:
+        entity:
+          domain: sensor
+          integration: metermate
     value:
       name: Reading Value
       description: The meter reading value.
