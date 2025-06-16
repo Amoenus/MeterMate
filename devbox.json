@@ -6,7 +6,7 @@
     "git@latest",
     "curl@latest",
     "ruff@latest",
-    "ffmpeg@latest",
+    "ffmpeg@4.4.3",
     "libpcap@latest",
     "gh@latest",
     "fzf@latest"
