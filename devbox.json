@@ -11,8 +11,7 @@
     "gh@latest",
     "fzf@latest"
   ],
-  "shell": {
-  },
+  "shell": {},
   "env": {
     "PYTHONPATH": ".",
     "PYTHONUNBUFFERED": "1",
