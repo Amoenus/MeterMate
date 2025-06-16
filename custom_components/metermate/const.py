@@ -4,7 +4,7 @@ from logging import Logger, getLogger
 
 LOGGER: Logger = getLogger(__package__)
 
-DOMAIN = "metermate
+DOMAIN = "metermate"
 
 # Configuration
 CONF_INITIAL_READING = "initial_reading"
