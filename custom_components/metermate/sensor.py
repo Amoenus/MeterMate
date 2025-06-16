@@ -96,6 +96,15 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         """When entity is added to hass."""
         await super().async_added_to_hass()
 
+        # Register this entity in our domain data for service access
+        if DOMAIN not in self.hass.data:
+            self.hass.data[DOMAIN] = {}
+        if "entities" not in self.hass.data[DOMAIN]:
+            self.hass.data[DOMAIN]["entities"] = {}
+
+        self.hass.data[DOMAIN]["entities"][self.entity_id] = self
+        _LOGGER.debug("Registered entity %s in domain data", self.entity_id)
+
         # Restore the last state if available
         if (last_state := await self.async_get_last_state()) is not None:
             _LOGGER.debug("Restoring state: %s", last_state.state)
@@ -158,15 +167,6 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
             self._attr_native_value = float(self._initial_reading)
 
     @property
-    def native_value(self) -> float:
-        """Return the state of the sensor."""
-        if self._attr_native_value is None:
-            return float(self._initial_reading)
-        if isinstance(self._attr_native_value, (int, float)):
-            return float(self._attr_native_value)
-        return float(self._initial_reading)
-
-    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
         attributes = {
@@ -183,14 +183,54 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
     async def update_value(self, new_value: float) -> None:
         """Update the sensor value."""
         old_value = self._attr_native_value
+
+        _LOGGER.info("update_value called: old=%s, new=%s", old_value, new_value)
+
+        # Protect against unwanted resets to 0.0
+        if (
+            new_value == 0.0
+            and old_value is not None
+            and isinstance(old_value, (int, float))
+            and old_value > 0
+        ):
+            _LOGGER.warning(
+                "Attempted to reset sensor %s from %s to 0.0. "
+                "This may be an unwanted reset. Rejecting update.",
+                self.entity_id,
+                old_value,
+            )
+            # Don't update the value, keep the current one
+            return
+
         self._attr_native_value = new_value
 
         # Track last good value (any value > 0) for recovery purposes
         if new_value > 0:
             self._last_good_value = new_value
 
-        _LOGGER.debug("Updating sensor value from %s to %s", old_value, new_value)
+        _LOGGER.info("Updating sensor value from %s to %s", old_value, new_value)
         _LOGGER.debug("Last good value updated to: %s", self._last_good_value)
 
         self.async_write_ha_state()
-        _LOGGER.debug("State written to Home Assistant")
+        _LOGGER.info("State written to Home Assistant")
+
+    def async_write_ha_state(self) -> None:
+        """Write the state to Home Assistant."""
+        _LOGGER.info(
+            "async_write_ha_state called: current value=%s", self._attr_native_value
+        )
+        super().async_write_ha_state()
+        _LOGGER.info("async_write_ha_state completed")
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity is being removed from hass."""
+        # Clean up our entity registry
+        if (
+            DOMAIN in self.hass.data
+            and "entities" in self.hass.data[DOMAIN]
+            and self.entity_id in self.hass.data[DOMAIN]["entities"]
+        ):
+            del self.hass.data[DOMAIN]["entities"][self.entity_id]
+            _LOGGER.debug("Unregistered entity %s from domain data", self.entity_id)
+
+        await super().async_will_remove_from_hass()

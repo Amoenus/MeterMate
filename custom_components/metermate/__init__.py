@@ -33,6 +33,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:  # noqa:
 
 async def async_setup_entry(hass: HomeAssistant, entry: MeterMateConfigEntry) -> bool:
     """Set up MeterMate from a config entry."""
+    # Initialize domain data if not present
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+
+    # Initialize entity registry for our domain
+    if "entities" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["entities"] = {}
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
