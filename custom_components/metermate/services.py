@@ -46,8 +46,12 @@ SERVICE_ADD_READING_SCHEMA = vol.Schema(
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Set up services for MeterMate."""
 
+    LOGGER.error("🔧 DEBUG: Setting up MeterMate services...")
+
     async def handle_add_reading(call: ServiceCall) -> None:
         """Handle the add_reading service call."""
+        LOGGER.error("🔧 DEBUG: MeterMate service called with data: %s", call.data)
+
         entity_id = call.data[ATTR_ENTITY_ID]
         value = call.data[ATTR_VALUE]
         mode = call.data[ATTR_MODE]
@@ -94,6 +98,8 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         handle_add_reading,
         schema=SERVICE_ADD_READING_SCHEMA,
     )
+
+    LOGGER.error("🔧 DEBUG: MeterMate service 'add_reading' registered successfully!")
 
 
 async def _validate_entity(hass: HomeAssistant, entity_id: str) -> bool:
