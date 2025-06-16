@@ -9,6 +9,20 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 from homeassistant.util import dt as dt_util
 
+from .const import (
+    ATTR_END_DATE,
+    ATTR_ENTITY_ID,
+    ATTR_MODE,
+    ATTR_START_DATE,
+    ATTR_TIMESTAMP,
+    ATTR_VALUE,
+    DOMAIN,
+    LOGGER,
+    MODE_CUMULATIVE,
+    MODE_PERIODIC,
+    SERVICE_ADD_READING,
+)
+
 # For historical data, we'll use a different approach
 HAS_RECORDER = False
 HAS_STATISTICS = False
@@ -26,22 +40,10 @@ try:
 except ImportError:
     pass
 
-from .const import (
-    ATTR_END_DATE,
-    ATTR_ENTITY_ID,
-    ATTR_MODE,
-    ATTR_START_DATE,
-    ATTR_TIMESTAMP,
-    ATTR_VALUE,
-    DOMAIN,
-    LOGGER,
-    MODE_CUMULATIVE,
-    MODE_PERIODIC,
-    SERVICE_ADD_READING,
-)
 
 if TYPE_CHECKING:
     from datetime import datetime
+
     from homeassistant.core import HomeAssistant, ServiceCall
 
 SERVICE_ADD_READING_SCHEMA = vol.Schema(
@@ -137,7 +139,7 @@ async def _get_current_total(hass: HomeAssistant, entity_id: str) -> float | Non
     try:
         if state.state not in ("unknown", "unavailable"):
             return float(state.state)
-        return 0.0
+        return 0.0  # noqa: TRY300
     except (ValueError, TypeError):
         return 0.0
 

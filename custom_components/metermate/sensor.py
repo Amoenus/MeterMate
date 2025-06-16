@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Sensor platform for MeterMate."""
 
 from __future__ import annotations
