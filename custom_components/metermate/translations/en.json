@@ -1,21 +1,51 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "description": "If you need help with the configuration have a look here: https://github.com/Amoenus/metermate",
-                "data": {
-                    "username": "Username",
-                    "password": "Password"
-                }
-            }
-        },
-        "error": {
-            "auth": "Username/Password is wrong.",
-            "connection": "Unable to connect to the server.",
-            "unknown": "Unknown error occurred."
-        },
-        "abort": {
-            "already_configured": "This entry is already configured."
+  "config": {
+    "step": {
+      "user": {
+        "title": "MeterMate Setup",
+        "description": "Set up your manual meter reading integration.",
+        "data": {
+          "name": "Meter Name",
+          "unit_of_measurement": "Unit of Measurement",
+          "device_class": "Device Class",
+          "initial_reading": "Initial Reading (Optional)"
         }
+      }
+    },
+    "abort": {
+      "already_configured": "This meter is already configured."
     }
+  },
+  "services": {
+    "add_reading": {
+      "name": "Add Reading",
+      "description": "Add a new meter reading.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity ID",
+          "description": "The MeterMate sensor entity ID."
+        },
+        "value": {
+          "name": "Reading Value",
+          "description": "The meter reading value."
+        },
+        "mode": {
+          "name": "Reading Mode",
+          "description": "How to interpret the reading value."
+        },
+        "timestamp": {
+          "name": "Timestamp",
+          "description": "When the reading was taken (for cumulative mode)."
+        },
+        "start_date": {
+          "name": "Start Date",
+          "description": "Start date for the consumption period (for periodic mode)."
+        },
+        "end_date": {
+          "name": "End Date",
+          "description": "End date for the consumption period (for periodic mode)."
+        }
+      }
+    }
+  }
 }
