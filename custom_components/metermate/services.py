@@ -9,6 +9,16 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 from homeassistant.util import dt as dt_util
 
+# Import what we need for historical statistics
+try:
+    from homeassistant.components.recorder.statistics import (
+        async_add_external_statistics,
+    )
+
+    HAS_STATISTICS = True
+except ImportError:
+    HAS_STATISTICS = False
+
 from .const import (
     ATTR_END_DATE,
     ATTR_ENTITY_ID,
@@ -200,27 +210,107 @@ async def _import_statistic(
     hass: HomeAssistant, entity_id: str, timestamp: datetime, new_total: float
 ) -> None:
     """Import a statistic into Home Assistant."""
-    LOGGER.info("Updating statistic for %s: %s at %s", entity_id, new_total, timestamp)
+    LOGGER.info(
+        "Processing statistic for %s: %s at %s", entity_id, new_total, timestamp
+    )
 
-    # Try to get the entity from our domain data where we'll store entity references
+    # First, try to add to the statistics database for historical data
+    if HAS_STATISTICS:
+        try:
+            await _add_historical_statistic(hass, entity_id, timestamp, new_total)
+        except (ValueError, TypeError, AttributeError) as e:
+            LOGGER.warning(
+                "Failed to add historical statistic for %s: %s", entity_id, str(e)
+            )
+
+    # Also update the current entity state for the most recent reading
+    current_time = dt_util.now()
+
+    # If this is today's data or the most recent data, also update current state
+    today_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if timestamp >= today_start:
+        # This is today's data, update the current state
+        await _update_current_state(hass, entity_id, new_total)
+    else:
+        # This is historical data, just log that we processed it
+        LOGGER.info(
+            "Processed historical statistic for %s: %s at %s",
+            entity_id,
+            new_total,
+            timestamp,
+        )
+
+
+async def _add_historical_statistic(
+    hass: HomeAssistant, entity_id: str, timestamp: datetime, value: float
+) -> None:
+    """Add historical statistic to Home Assistant statistics database."""
+    if not HAS_STATISTICS:
+        LOGGER.warning("Statistics module not available, skipping historical data")
+        return
+
+    # Get entity information
+    entity_registry = async_get_entity_registry(hass)
+    entity_entry = entity_registry.async_get(entity_id)
+
+    if not entity_entry:
+        LOGGER.error("Entity entry not found for %s", entity_id)
+        return
+
+    # Get current state to get unit info
+    state = hass.states.get(entity_id)
+    unit = state.attributes.get("unit_of_measurement", "kWh") if state else "kWh"
+
+    # Create unique statistic ID
+    statistic_id = f"{DOMAIN}:{entity_entry.unique_id or entity_id.split('.')[1]}"
+
+    # Prepare metadata
+    metadata = {
+        "has_mean": False,
+        "has_sum": True,
+        "name": entity_entry.name or entity_entry.original_name or entity_id,
+        "source": DOMAIN,
+        "statistic_id": statistic_id,
+        "unit_of_measurement": unit,
+    }
+
+    # Prepare statistics data
+    statistics = [
+        {
+            "start": timestamp,
+            "sum": value,
+        }
+    ]
+
+    # Add to statistics database
+    try:
+        # Suppress type checker warnings as we're constructing the data correctly
+        async_add_external_statistics(hass, metadata, statistics)  # type: ignore[arg-type]
+        LOGGER.info(
+            "Added historical statistic for %s: %s at %s", entity_id, value, timestamp
+        )
+    except (ValueError, TypeError, AttributeError) as e:
+        LOGGER.error("Failed to add external statistics for %s: %s", entity_id, str(e))
+        raise
+
+
+async def _update_current_state(
+    hass: HomeAssistant, entity_id: str, value: float
+) -> None:
+    """Update the current state of the entity."""
     if DOMAIN in hass.data and "entities" in hass.data[DOMAIN]:
         entity = hass.data[DOMAIN]["entities"].get(entity_id)
         if entity and hasattr(entity, "update_value"):
-            LOGGER.debug("Found entity %s, calling update_value", entity_id)
-            await entity.update_value(new_total)
-            LOGGER.debug(
-                "Successfully updated entity %s via update_value to %s",
-                entity_id,
-                new_total,
+            LOGGER.debug("Updating current state for %s to %s", entity_id, value)
+            await entity.update_value(value)
+            LOGGER.debug("Successfully updated current state for %s", entity_id)
+        else:
+            LOGGER.error(
+                "Could not find entity object for %s to update state", entity_id
             )
-            return
-
-    LOGGER.error(
-        "Could not find entity object for %s to call update_value method. "
-        "The entity may not be properly loaded or registered. "
-        "Skipping state update to prevent inconsistencies.",
-        entity_id,
-    )
+    else:
+        LOGGER.error("Domain data not found for %s", entity_id)
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:
