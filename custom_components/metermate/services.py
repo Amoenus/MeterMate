@@ -208,31 +208,12 @@ async def _import_statistic(
         "Processing statistic for %s: %s at %s", entity_id, new_total, timestamp
     )
 
-    # Check if this is historical data
-    current_time = dt_util.now()
-    is_historical = timestamp.date() < current_time.date()
-
-    if is_historical:
-        LOGGER.info(
-            "Historical data detected for %s: %s on %s (current date: %s)",
-            entity_id,
-            new_total,
-            timestamp.date(),
-            current_time.date(),
-        )
-        # For historical data, we'll update the state but add special attributes
-        await _update_current_state_with_historical_info(
-            hass, entity_id, new_total, timestamp
-        )
-    else:
-        # For current/recent data, update normally
-        await _update_current_state(hass, entity_id, new_total)
+    # Simplified approach - just update the entity state
+    # Remove complex historical handling that might be causing issues
+    await _update_current_state(hass, entity_id, new_total)
 
     LOGGER.info(
-        "Processed statistic for %s: %s (intended timestamp: %s)",
-        entity_id,
-        new_total,
-        timestamp,
+        "Processed statistic for %s: %s", entity_id, new_total
     )
 
 
@@ -263,55 +244,8 @@ async def _update_current_state(
         LOGGER.error("Domain data not found for %s", entity_id)
 
 
-async def _update_current_state_with_historical_info(
-    hass: HomeAssistant, entity_id: str, value: float, historical_timestamp: datetime
-) -> None:
-    """Update the current state with historical data information."""
-    if DOMAIN in hass.data and "entities" in hass.data[DOMAIN]:
-        entity = hass.data[DOMAIN]["entities"].get(entity_id)
-        if entity and hasattr(entity, "update_value_with_historical_info"):
-            LOGGER.debug(
-                "Updating state for %s to %s with historical timestamp %s",
-                entity_id,
-                value,
-                historical_timestamp,
-            )
-            await entity.update_value_with_historical_info(value, historical_timestamp)
-            LOGGER.debug("Successfully updated historical state for %s", entity_id)
-        elif entity and hasattr(entity, "update_value"):
-            # Fallback to regular update if historical method not available
-            LOGGER.debug("Using fallback update for historical data %s", entity_id)
-            await entity.update_value(value)
-
-            # Try to add a custom attribute to track the intended historical date
-            try:
-                current_state = hass.states.get(entity_id)
-                if current_state:
-                    attributes = dict(current_state.attributes)
-                    attributes["last_historical_date"] = (
-                        historical_timestamp.date().isoformat()
-                    )
-                    hass.states.async_set(
-                        entity_id, current_state.state, attributes, force_update=True
-                    )
-                    LOGGER.debug(
-                        "Added historical date attribute to %s: %s",
-                        entity_id,
-                        historical_timestamp.date(),
-                    )
-            except (ValueError, TypeError, AttributeError) as e:
-                LOGGER.warning(
-                    "Could not add historical date attribute to %s: %s",
-                    entity_id,
-                    str(e),
-                )
-        else:
-            LOGGER.error(
-                "Could not find entity object for %s to update historical state",
-                entity_id,
-            )
-    else:
-        LOGGER.error("Domain data not found for %s", entity_id)
+# Historical data handling function removed to prevent loading issues
+# This complex function was causing Home Assistant to hang during startup
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:
