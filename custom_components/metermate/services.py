@@ -152,6 +152,15 @@ async def _process_cumulative_reading(
 ) -> None:
     """Process a cumulative reading."""
     timestamp = call.data.get(ATTR_TIMESTAMP)
+
+    LOGGER.info(
+        "Processing cumulative reading for %s: value=%s, initial=%s, timestamp=%s",
+        entity_id,
+        value,
+        initial_reading,
+        timestamp,
+    )
+
     if timestamp is None:
         # If no timestamp provided, log a warning and use current time
         LOGGER.warning(
@@ -161,6 +170,13 @@ async def _process_cumulative_reading(
         timestamp = dt_util.now()
     elif timestamp.tzinfo is None:
         timestamp = dt_util.as_local(timestamp)
+
+    LOGGER.info(
+        "Final timestamp for %s: %s (timezone: %s)",
+        entity_id,
+        timestamp,
+        timestamp.tzinfo,
+    )
 
     # Calculate new total: reading - initial_reading
     new_total = value - initial_reading
@@ -231,11 +247,22 @@ async def _import_statistic(
     current_date = dt_util.now().date()
     statistic_date = timestamp.date()
 
+    # Debug logging to understand the date comparison
+    LOGGER.error(
+        "🔍 DEBUG: Date comparison for %s: current_date=%s, statistic_date=%s, is_historical=%s",
+        entity_id,
+        current_date,
+        statistic_date,
+        statistic_date != current_date,
+    )
+
     if statistic_date != current_date:
         # This is historical data, try to import as historical statistic
+        LOGGER.error("🔍 DEBUG: Calling _add_historical_statistic for %s", entity_id)
         await _add_historical_statistic(hass, entity_id, timestamp, new_total)
     else:
         # This is current data, update current state
+        LOGGER.error("🔍 DEBUG: Calling _update_current_state for %s", entity_id)
         await _update_current_state(hass, entity_id, new_total)
 
     LOGGER.info("Processed statistic for %s: %s", entity_id, new_total)
