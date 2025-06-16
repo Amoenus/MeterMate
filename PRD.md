@@ -93,7 +93,72 @@ Handling of multiple tariffs.
 
 Automatic cost calculation (this should be handled by the Energy Dashboard itself).
 
-7. Technical Approach
-   The integration will be built as a standard Home Assistant custom component. The core logic for data insertion will leverage the internal homeassistant.components.recorder.statistics.async_import_statistics function. This is the officially sanctioned, though not publicly documented, method for inserting historical statistics and ensures compatibility with the database structure without resorting to direct SQL manipulation.
+8. Implementation Strategy
 
-The integration's sensor will get its state from the statistics table, ensuring that its value is always consistent with the long-term data used by the Energy Dashboard.
+8.1. Database Schema Understanding
+Based on successful implementations, we need to interact with:
+
+```sql
+-- Statistics metadata table
+CREATE TABLE statistics_meta (
+    id INTEGER PRIMARY KEY,
+    statistic_id TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL,
+    unit_of_measurement TEXT,
+    has_mean BOOLEAN,
+    has_sum BOOLEAN,
+    name TEXT
+);
+
+-- Long-term statistics table
+CREATE TABLE statistics (
+    id INTEGER PRIMARY KEY,
+    metadata_id INTEGER REFERENCES statistics_meta(id),
+    start_ts REAL NOT NULL,
+    state REAL,
+    sum REAL,
+    created_ts REAL DEFAULT (strftime('%s', 'now'))
+);
+```
+
+8.2. Data Processing Flow
+1. **Metadata Creation**: Ensure sensor exists in `statistics_meta` table
+2. **Timestamp Conversion**: Convert user-provided dates to Unix epoch timestamps
+3. **Data Validation**: Prevent duplicate entries and validate data ranges
+4. **Direct Insertion**: Insert with correct historical timestamps into `statistics` table
+5. **State Update**: Update current sensor state if data is more recent
+
+8.3. Historical Data Handling
+- **Cumulative Mode**: Convert meter readings to total consumption using initial reading offset
+- **Periodic Mode**: Distribute consumption across the specified date range
+- **Timestamp Alignment**: Align timestamps to hourly boundaries for optimal Energy Dashboard compatibility
+- **Gap Handling**: Handle data gaps intelligently without overwriting existing Home Assistant data
+
+8.4. Safety Measures
+- **Backup Strategy**: Recommend database backups before bulk imports
+- **Rollback Capability**: Ability to identify and remove imported data if needed
+- **Validation**: Extensive validation of input data and database state
+- **Logging**: Comprehensive logging for troubleshooting and audit trails
+
+9. Technical Approach
+   The integration will be built as a standard Home Assistant custom component.
+
+Initial Proof of Concept Status:
+We have a working PoC that successfully creates sensors and allows data entry through services. However, the current implementation has a critical limitation: it logs all data at the current timestamp rather than at the correct historical dates. This prevents proper historical tracking in the Energy Dashboard.
+
+Revised Technical Approach:
+After researching successful implementations (such as the Home-Assistant-Import-Energy-Data project), it's clear that achieving true historical data logging requires direct database manipulation rather than relying on Home Assistant's built-in statistics APIs. The built-in APIs are designed for real-time data ingestion and don't properly handle backdated entries.
+
+Core Requirements for Historical Data:
+1. **Direct Database Access**: We need to directly insert data into Home Assistant's `statistics` and `statistics_short_term` tables with correct timestamps
+2. **Unix Timestamp Conversion**: All timestamps must be converted to Unix epoch format for proper database storage
+3. **Proper Table Structure**: Understanding and respecting Home Assistant's database schema (tested with schema version 50+)
+4. **Metadata Handling**: Ensuring proper `statistics_meta` entries exist for our sensors
+5. **Data Validation**: Ensuring data integrity and handling of duplicate entries
+
+Database Tables Involved:
+- `statistics_meta`: Contains sensor metadata (statistic_id, unit_of_measurement, source)
+- `statistics`: Long-term statistics data (metadata_id, state, sum, start_ts, created_ts)
+- `statistics_short_term`: Short-term statistics data for recent data
+
+The integration's sensor will continue to track current state, but historical data will be inserted directly into the statistics tables with the correct timestamps, ensuring full compatibility with the Energy Dashboard's historical views.

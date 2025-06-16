@@ -22,24 +22,7 @@ from .const import (
     MODE_PERIODIC,
     SERVICE_ADD_READING,
 )
-
-# For historical data, we'll use a different approach
-HAS_RECORDER = False
-HAS_STATISTICS = False
-
-try:
-    from homeassistant.components.recorder.models import (
-        StatisticData,
-        StatisticMetaData,
-    )
-    from homeassistant.components.recorder.statistics import (
-        async_add_external_statistics,
-    )
-
-    HAS_STATISTICS = True
-except ImportError:
-    pass
-
+from .database import HistoricalDataHandler
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -262,83 +245,69 @@ async def _add_historical_statistic(
     hass: HomeAssistant, entity_id: str, timestamp: datetime, value: float
 ) -> None:
     """Add historical statistic to Home Assistant statistics database."""
-    if not HAS_STATISTICS:
-        LOGGER.warning(
-            "Statistics components not available. Cannot import historical data for %s",
-            entity_id,
-        )
-        # Fallback to updating current state
-        await _update_current_state(hass, entity_id, value)
-        return
-
     try:
-        # Get entity state for unit and device class
+        # Get entity state for unit and name
         state = hass.states.get(entity_id)
         if not state:
             LOGGER.error("Entity %s not found for historical import", entity_id)
+            await _update_current_state(hass, entity_id, value)
             return
 
-        unit = state.attributes.get("unit_of_measurement", "")
+        unit = state.attributes.get("unit_of_measurement", "kWh")
+        name = state.attributes.get("friendly_name", entity_id)
 
-        # Create statistic metadata
-        metadata = StatisticMetaData(
-            source=DOMAIN,
-            statistic_id=f"{DOMAIN}:{entity_id.replace('sensor.', '')}",
-            unit_of_measurement=unit,
-            has_mean=False,
-            has_sum=True,
-            name=state.attributes.get("friendly_name", entity_id),
+        # Use our database handler for direct database access
+        db_handler = HistoricalDataHandler(hass)
+
+        # Validate database access first
+        if not db_handler.validate_database_access():
+            LOGGER.warning(
+                "Cannot access database for historical import of %s. "
+                "Falling back to current state update.",
+                entity_id,
+            )
+            await _update_current_state(hass, entity_id, value)
+            return
+
+        # Add the historical statistic
+        success = db_handler.add_historical_statistic(
+            entity_id, timestamp, value, unit, name
         )
 
-        # Create statistic data
-        statistic_data = StatisticData(
-            start=timestamp,
-            sum=value,
-            state=value,
-        )
+        if success:
+            LOGGER.info(
+                "Successfully imported historical statistic for %s: %s at %s",
+                entity_id,
+                value,
+                timestamp,
+            )
 
-        # Import the statistics
-        async_add_external_statistics(
-            hass,
-            metadata,
-            [statistic_data],
-        )
+            # Also update current state if this is the most recent data
+            current_state_value = 0.0
+            try:
+                if state.state not in ("unknown", "unavailable"):
+                    current_state_value = float(state.state)
+            except (ValueError, TypeError):
+                pass
 
-        LOGGER.info(
-            "Successfully imported historical statistic for %s: %s at %s",
-            entity_id,
-            value,
-            timestamp,
-        )
-
-        # Also update current state if this is the most recent data
-        current_state_value = 0.0
-        try:
-            if state.state not in ("unknown", "unavailable"):
-                current_state_value = float(state.state)
-        except (ValueError, TypeError):
-            pass
-
-        if value > current_state_value:
+            if value > current_state_value:
+                await _update_current_state(hass, entity_id, value)
+        else:
+            LOGGER.warning(
+                "Failed to import historical statistic for %s. "
+                "Falling back to current state update.",
+                entity_id,
+            )
             await _update_current_state(hass, entity_id, value)
 
-    except (ValueError, TypeError, AttributeError, ImportError) as e:
+    except (ValueError, TypeError, AttributeError) as e:
         LOGGER.error(
-            "Error importing historical statistic for %s: %s",
+            "Unexpected error importing historical statistic for %s: %s",
             entity_id,
             e,
         )
         # Fallback to updating current state
         await _update_current_state(hass, entity_id, value)
-
-
-# Temporarily disabled to prevent Home Assistant loading issues
-# async def _add_historical_statistic(
-#     hass: HomeAssistant, entity_id: str, timestamp: datetime, value: float
-# ) -> None:
-#     """Add historical statistic to Home Assistant statistics database."""
-#     # This function is temporarily disabled
-#     pass
 
 
 async def _update_current_state(
@@ -357,10 +326,6 @@ async def _update_current_state(
             )
     else:
         LOGGER.error("Domain data not found for %s", entity_id)
-
-
-# Historical data handling function removed to prevent loading issues
-# This complex function was causing Home Assistant to hang during startup
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:
