@@ -440,9 +440,14 @@ class MeterMateDataManager:
             else:  # PERIODIC
                 running_total += reading.value
 
+            # Round timestamp to the top of the hour for statistics
+            hour_timestamp = reading.timestamp.replace(
+                minute=0, second=0, microsecond=0
+            )
+
             statistics.append(
                 StatisticData(
-                    start=reading.timestamp,
+                    start=hour_timestamp,
                     state=0.0,  # Not used for total_increasing, but required
                     sum=running_total,
                 )

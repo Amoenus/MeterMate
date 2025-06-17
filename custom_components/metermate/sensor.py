@@ -268,6 +268,15 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
             # Get the most recent reading by timestamp
             latest_reading = max(cumulative_readings, key=lambda r: r.timestamp)
 
+            _LOGGER.debug(
+                "async_update for %s: found %d total, %d cumulative. Latest: %s at %s",
+                self.entity_id,
+                len(readings),
+                len(cumulative_readings),
+                latest_reading.value,
+                latest_reading.timestamp,
+            )
+
             # Update the sensor value if it's different
             if self._attr_native_value != latest_reading.value:
                 old_value = self._attr_native_value
@@ -291,5 +300,5 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
                     self._attr_native_value,
                 )
 
-        except Exception as e:
-            _LOGGER.error("Error updating sensor %s: %s", self.entity_id, e)
+        except Exception:
+            _LOGGER.exception("Error updating sensor %s", self.entity_id)
