@@ -112,8 +112,8 @@ class MeterMateDataManager:
         # Update Home Assistant statistics
         await self._update_statistics(entity_id)
 
-        # Update the sensor value to the latest cumulative reading
-        await self._update_sensor_value(entity_id)
+        # Only update sensor value if this reading might be the most recent
+        await self._update_sensor_value_if_latest(entity_id, reading)
 
         _LOGGER.info(
             "Added reading for %s: %s %s at %s",
@@ -419,8 +419,8 @@ class MeterMateDataManager:
         # Get the sensor configuration
         unit = readings[0].unit if readings else "kWh"
 
-        # Create metadata first - use proper statistic_id format for external statistics
-        statistic_id = f"{DOMAIN}:{entity_id}"
+        # Create metadata first - remove sensor. prefix for external statistics
+        statistic_id = entity_id.replace("sensor.", "")
         metadata = StatisticMetaData(
             has_mean=False,
             has_sum=True,
@@ -469,8 +469,51 @@ class MeterMateDataManager:
                 entity_id,
             )
 
+    async def _update_sensor_value_if_latest(
+        self, entity_id: str, new_reading: Reading
+    ) -> None:
+        """Update sensor value only if new reading is most recent cumulative reading."""
+        if new_reading.reading_type != ReadingType.CUMULATIVE:
+            return  # Only cumulative readings affect the sensor value
+
+        # Get all cumulative readings to check if this is the latest
+        readings = await self.get_all_readings(entity_id)
+        cumulative_readings = [
+            r for r in readings if r.reading_type == ReadingType.CUMULATIVE
+        ]
+
+        if not cumulative_readings:
+            return
+
+        # Find the most recent reading by timestamp
+        latest_reading = max(cumulative_readings, key=lambda r: r.timestamp)
+
+        # Only update if the new reading is the latest one
+        if latest_reading.id == new_reading.id:
+            # Get the sensor entity and update its value
+            if (
+                DOMAIN in self.hass.data
+                and "entities" in self.hass.data[DOMAIN]
+                and entity_id in self.hass.data[DOMAIN]["entities"]
+            ):
+                sensor = self.hass.data[DOMAIN]["entities"][entity_id]
+                await sensor.update_value(latest_reading.value)
+                _LOGGER.debug(
+                    "Updated sensor %s value to %s %s (latest reading)",
+                    entity_id,
+                    latest_reading.value,
+                    latest_reading.unit,
+                )
+        else:
+            _LOGGER.debug(
+                "Not updating sensor %s value - added reading is not the latest "
+                "(timestamp: %s)",
+                entity_id,
+                new_reading.timestamp,
+            )
+
     async def _update_sensor_value(self, entity_id: str) -> None:
-        """Update the sensor value to the latest cumulative reading."""
+        """Update sensor value to latest cumulative reading (used for recalculation)."""
         # Get the latest cumulative reading
         readings = await self.get_all_readings(entity_id)
         if not readings:
