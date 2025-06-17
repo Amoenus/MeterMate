@@ -45,10 +45,19 @@ window.MeterMateAPI = (function() {
         for (const meter of meters) {
           try {
             console.log(`Calling get_readings service for ${meter.entity_id}...`);
-            const result = await this.hass.callService("metermate", "get_readings", {
-              entity_id: meter.entity_id
-            });
+            // Use the Home Assistant service call method with return_response
+            const result = await this.hass.callService(
+              "metermate",
+              "get_readings",
+              {
+                entity_id: meter.entity_id
+              },
+              {
+                return_response: true
+              }
+            );
             console.log('Service result:', result);
+            // The response data should be directly in result if successful
             const readings = result?.readings || [];
             console.log('Extracted readings:', readings);
             readings.forEach(reading => {
@@ -72,9 +81,16 @@ window.MeterMateAPI = (function() {
     async getMeterReadings(entityId) {
       try {
         console.log(`Getting readings for meter: ${entityId}`);
-        const result = await this.hass.callService("metermate", "get_readings", {
-          entity_id: entityId
-        });
+        const result = await this.hass.callService(
+          "metermate",
+          "get_readings",
+          {
+            entity_id: entityId
+          },
+          {
+            return_response: true
+          }
+        );
         console.log('Meter readings result:', result);
         return result?.readings || [];
       } catch (error) {
