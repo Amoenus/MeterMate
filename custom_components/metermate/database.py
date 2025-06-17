@@ -261,3 +261,105 @@ class HistoricalDataHandler:
         except sqlite3.Error as e:
             LOGGER.error("Database validation failed: %s", e)
             return False
+
+    def clear_statistics_for_entity(self, entity_id: str) -> bool:
+        """Clear all statistics data for an entity."""
+        db_path = self._get_database_path()
+        if not db_path:
+            return False
+
+        try:
+            with sqlite3.connect(
+                db_path, timeout=10.0, check_same_thread=False
+            ) as conn:
+                # Get metadata ID for the entity
+                cursor = conn.execute(
+                    "SELECT id FROM statistics_meta WHERE statistic_id = ?",
+                    (entity_id,),
+                )
+                result = cursor.fetchone()
+
+                if not result:
+                    LOGGER.debug("No statistics metadata found for %s", entity_id)
+                    return True
+
+                metadata_id = result[0]
+
+                # Delete statistics entries
+                cursor = conn.execute(
+                    "DELETE FROM statistics WHERE metadata_id = ?",
+                    (metadata_id,),
+                )
+                deleted_count = cursor.rowcount
+
+                # Delete short-term statistics entries (if table exists)
+                try:
+                    cursor = conn.execute(
+                        "DELETE FROM statistics_short_term WHERE metadata_id = ?",
+                        (metadata_id,),
+                    )
+                    deleted_short_term = cursor.rowcount
+                except sqlite3.OperationalError:
+                    # Table might not exist in older HA versions
+                    deleted_short_term = 0
+
+                conn.commit()
+
+                LOGGER.info(
+                    "Cleared statistics for %s: %d long-term, %d short-term",
+                    entity_id,
+                    deleted_count,
+                    deleted_short_term,
+                )
+                return True
+
+        except sqlite3.Error as e:
+            LOGGER.error("Error clearing statistics for %s: %s", entity_id, e)
+            return False
+
+    def clear_states_for_entity(
+        self, entity_id: str, *, keep_latest: bool = True
+    ) -> bool:
+        """Clear state history for an entity, optionally keeping latest state."""
+        db_path = self._get_database_path()
+        if not db_path:
+            return False
+
+        try:
+            with sqlite3.connect(
+                db_path, timeout=10.0, check_same_thread=False
+            ) as conn:
+                if keep_latest:
+                    # Keep only the most recent state
+                    cursor = conn.execute(
+                        """DELETE FROM states
+                           WHERE entity_id = ?
+                           AND state_id NOT IN (
+                               SELECT state_id FROM states
+                               WHERE entity_id = ?
+                               ORDER BY last_changed_ts DESC
+                               LIMIT 1
+                           )""",
+                        (entity_id, entity_id),
+                    )
+                else:
+                    # Delete all states
+                    cursor = conn.execute(
+                        "DELETE FROM states WHERE entity_id = ?",
+                        (entity_id,),
+                    )
+
+                deleted_count = cursor.rowcount
+                conn.commit()
+
+                LOGGER.info(
+                    "Cleared %d state entries for %s (keep_latest=%s)",
+                    deleted_count,
+                    entity_id,
+                    keep_latest,
+                )
+                return True
+
+        except sqlite3.Error as e:
+            LOGGER.error("Error clearing states for %s: %s", entity_id, e)
+            return False

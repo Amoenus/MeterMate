@@ -668,12 +668,25 @@ class MeterMateDataManager:
             )
 
     async def _clear_existing_statistics(self, entity_id: str) -> None:
-        """Clear existing statistics for an entity before rebuilding."""
+        """Clear existing statistics and state history for entity before rebuilding."""
         try:
-            # For now, we'll rely on the database handler to handle overwrites
-            # The HistoricalDataHandler.add_historical_statistic method
-            # already handles updating existing entries
-            _LOGGER.debug("Clearing existing statistics for %s", entity_id)
+            _LOGGER.debug("Clearing existing statistics and states for %s", entity_id)
+
+            # Clear statistics (long-term data)
+            stats_cleared = self._historical_handler.clear_statistics_for_entity(
+                entity_id
+            )
+            if not stats_cleared:
+                _LOGGER.warning("Failed to clear statistics for %s", entity_id)
+
+            # Clear state history (journey data) but keep the latest state
+            states_cleared = self._historical_handler.clear_states_for_entity(
+                entity_id, keep_latest=True
+            )
+            if not states_cleared:
+                _LOGGER.warning("Failed to clear state history for %s", entity_id)
+
+            _LOGGER.info("Cleared existing data for %s", entity_id)
 
         except Exception:
             _LOGGER.exception("Error clearing existing statistics for %s", entity_id)
