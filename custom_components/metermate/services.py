@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import voluptuous as vol
 from homeassistant.core import SupportsResponse
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
@@ -298,7 +299,17 @@ class MeterMateServices:
 
     async def _handle_get_readings(self, call: ServiceCall) -> ServiceResponse:
         """Handle get_readings service call."""
-        entity_id = call.data["entity_id"]
+        # Debug: Log the entire call object to understand its structure
+        _LOGGER.info("GET_READINGS service call object: %s", call)
+        _LOGGER.info("Call data: %s", call.data)
+
+        # Try to get entity_id from data
+        entity_id = call.data.get("entity_id")
+
+        if not entity_id:
+            error_msg = "entity_id is required"
+            raise HomeAssistantError(error_msg)
+
         start_date = call.data.get("start_date")
         end_date = call.data.get("end_date")
 
@@ -324,22 +335,30 @@ class MeterMateServices:
             entity_id,
         )
 
-        # Return the readings data for the frontend
-        response = {
-            "readings": [
-                {
-                    "id": reading.id,
-                    "timestamp": reading.timestamp.isoformat(),
-                    "value": reading.value,
-                    "reading_type": reading.reading_type.value,
-                    "unit": reading.unit,
-                    "notes": reading.notes,
-                }
-                for reading in readings
-            ]
-        }
+        # Log the readings for debugging and return response
+        readings_data = []
+        for reading in readings:
+            reading_dict = {
+                "id": reading.id,
+                "timestamp": reading.timestamp.isoformat(),
+                "value": reading.value,
+                "reading_type": reading.reading_type.value,
+                "unit": reading.unit,
+                "notes": reading.notes,
+            }
+            readings_data.append(reading_dict)
+            _LOGGER.info(
+                "Reading: id=%s, timestamp=%s, value=%s, type=%s, unit=%s, notes=%s",
+                reading.id,
+                reading.timestamp.isoformat(),
+                reading.value,
+                reading.reading_type.value,
+                reading.unit,
+                reading.notes,
+            )
 
-        _LOGGER.info("Returning response: %s", response)
+        response = {"readings": readings_data}
+        _LOGGER.info("Returning response with %d readings", len(readings_data))
         return response
 
     async def _handle_bulk_import(self, call: ServiceCall) -> None:

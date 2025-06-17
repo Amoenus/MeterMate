@@ -45,20 +45,31 @@ window.MeterMateAPI = (function() {
         for (const meter of meters) {
           try {
             console.log(`Calling get_readings service for ${meter.entity_id}...`);
-            // Use the Home Assistant service call method with return_response
-            const result = await this.hass.callService(
-              "metermate",
-              "get_readings",
-              {
-                entity_id: meter.entity_id
-              },
-              {
-                return_response: true
-              }
-            );
+            // Call service via callWS with return_response
+            const result = await this.hass.callWS({
+              type: "call_service",
+              domain: "metermate",
+              service: "get_readings",
+              service_data: { entity_id: meter.entity_id },
+              return_response: true,
+            });
             console.log('Service result:', result);
-            // The response data should be directly in result if successful
-            const readings = result?.readings || [];
+            console.log('Service result type:', typeof result);
+            console.log('Service result keys:', Object.keys(result || {}));
+
+            // The WebSocket response might have the data in result.response or directly in result
+            let readings = [];
+            if (result?.response?.readings) {
+              readings = result.response.readings;
+            } else if (result?.readings) {
+              readings = result.readings;
+            } else if (Array.isArray(result)) {
+              readings = result;
+            } else {
+              console.warn('Unexpected response structure:', result);
+              readings = [];
+            }
+
             console.log('Extracted readings:', readings);
             readings.forEach(reading => {
               reading.meter_id = meter.entity_id; // Add meter reference
@@ -81,18 +92,31 @@ window.MeterMateAPI = (function() {
     async getMeterReadings(entityId) {
       try {
         console.log(`Getting readings for meter: ${entityId}`);
-        const result = await this.hass.callService(
-          "metermate",
-          "get_readings",
-          {
-            entity_id: entityId
-          },
-          {
-            return_response: true
-          }
-        );
+        const result = await this.hass.callWS({
+          type: "call_service",
+          domain: "metermate",
+          service: "get_readings",
+          service_data: { entity_id: entityId },
+          return_response: true,
+        });
         console.log('Meter readings result:', result);
-        return result?.readings || [];
+        console.log('Meter readings result type:', typeof result);
+        console.log('Meter readings result keys:', Object.keys(result || {}));
+
+        // Handle different possible response structures
+        let readings = [];
+        if (result?.response?.readings) {
+          readings = result.response.readings;
+        } else if (result?.readings) {
+          readings = result.readings;
+        } else if (Array.isArray(result)) {
+          readings = result;
+        } else {
+          console.warn('Unexpected response structure:', result);
+          readings = [];
+        }
+
+        return readings;
       } catch (error) {
         console.error("Error loading readings:", error);
         throw error;
