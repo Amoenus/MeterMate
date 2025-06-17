@@ -175,9 +175,10 @@ window.MeterMateAPI = (function() {
     }
 
     // Update an existing reading
-    async updateReading(readingId, value, timestamp, notes) {
+    async updateReading(entityId, readingId, value, timestamp, notes) {
       try {
         await this.hass.callService("metermate", "update_reading", {
+          entity_id: entityId,
           reading_id: readingId,
           value: parseFloat(value),
           timestamp: timestamp || undefined,
@@ -191,9 +192,10 @@ window.MeterMateAPI = (function() {
     }
 
     // Delete a reading
-    async deleteReading(readingId) {
+    async deleteReading(entityId, readingId) {
       try {
         await this.hass.callService("metermate", "delete_reading", {
+          entity_id: entityId,
           reading_id: readingId
         });
       } catch (error) {

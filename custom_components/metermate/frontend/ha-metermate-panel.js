@@ -183,6 +183,7 @@ class HAMeterMatePanel extends HTMLElement {
 
       try {
         await this._api.updateReading(
+          this._editingReading.meter_id,
           this._editingReading.id,
           parseFloat(formData.get("value")),
           formData.get("datetime"),
@@ -198,7 +199,7 @@ class HAMeterMatePanel extends HTMLElement {
       }
     }
 
-    async _handleDeleteReading(readingId) {
+    async _handleDeleteReading(meterId, readingId) {
       const confirmed = confirm(
         "Are you sure you want to delete this reading? This action cannot be undone."
       );
@@ -206,7 +207,7 @@ class HAMeterMatePanel extends HTMLElement {
       if (!confirmed) return;
 
       try {
-        await this._api.deleteReading(readingId);
+        await this._api.deleteReading(meterId, readingId);
         this._showAlert("success", "Reading deleted successfully");
         await this._loadData();
       } catch (error) {
@@ -711,7 +712,7 @@ class HAMeterMatePanel extends HTMLElement {
                   <button class="btn-icon" onclick="window.meterMatePanel._openEditDialog(${JSON.stringify(reading).replace(/"/g, '&quot;')})" title="Edit">
                     <ha-icon icon="mdi:pencil"></ha-icon>
                   </button>
-                  <button class="btn-icon" onclick="window.meterMatePanel._handleDeleteReading('${reading.id}')" title="Delete">
+                  <button class="btn-icon" onclick="window.meterMatePanel._handleDeleteReading('${reading.meter_id}', '${reading.id}')" title="Delete">
                     <ha-icon icon="mdi:delete"></ha-icon>
                   </button>
                 </td>
