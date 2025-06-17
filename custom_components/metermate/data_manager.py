@@ -90,7 +90,11 @@ class MeterMateDataManager:
         if existing:
             return OperationResult(
                 success=False,
-                message=f"Reading already exists for timestamp {reading.timestamp}",
+                message=(
+                    f"Reading already exists for timestamp {reading.timestamp}. "
+                    f"Existing reading: {existing.value} {existing.unit}. "
+                    f"Use update_reading service to modify existing readings."
+                ),
             )
 
         # Generate ID if not provided
@@ -202,6 +206,31 @@ class MeterMateDataManager:
     async def get_all_readings(self, entity_id: str) -> list[Reading]:
         """Get all readings for an entity."""
         return await self.get_readings(entity_id)
+
+    async def get_reading_count(self, entity_id: str) -> int:
+        """Get the total number of readings for an entity."""
+        await self.async_load()
+
+        if entity_id not in self._data:
+            return 0
+
+        return len(self._data[entity_id])
+
+    async def get_latest_reading(self, entity_id: str) -> Reading | None:
+        """Get the most recent reading for an entity."""
+        readings = await self.get_all_readings(entity_id)
+        if not readings:
+            return None
+
+        return max(readings, key=lambda r: r.timestamp)
+
+    async def get_earliest_reading(self, entity_id: str) -> Reading | None:
+        """Get the oldest reading for an entity."""
+        readings = await self.get_all_readings(entity_id)
+        if not readings:
+            return None
+
+        return min(readings, key=lambda r: r.timestamp)
 
     # UPDATE operations
     async def update_reading(
@@ -368,11 +397,23 @@ class MeterMateDataManager:
         """Update Home Assistant statistics for an entity."""
         readings = await self.get_all_readings(entity_id)
         if not readings:
+            _LOGGER.debug(
+                "No readings found for %s, skipping statistics update", entity_id
+            )
             return
 
         # Get the sensor configuration
-        # This would need to be adapted based on how you store sensor configs
         unit = readings[0].unit if readings else "kWh"
+
+        # Create metadata first
+        metadata = StatisticMetaData(
+            has_mean=False,
+            has_sum=True,
+            name=entity_id,
+            source=DOMAIN,
+            statistic_id=entity_id,
+            unit_of_measurement=unit,
+        )
 
         # Convert readings to StatisticData
         statistics = []
@@ -392,19 +433,95 @@ class MeterMateDataManager:
                 )
             )
 
-        # Create metadata
-        metadata = StatisticMetaData(
-            has_mean=False,
-            has_sum=True,
-            name=entity_id,
-            source=DOMAIN,
-            statistic_id=entity_id,
-            unit_of_measurement=unit,
-        )
+        try:
+            # First, add metadata only to ensure it exists
+            await self.hass.async_add_executor_job(
+                self._register_statistics_metadata, metadata
+            )
 
-        # Add to Home Assistant statistics
-        async_add_external_statistics(self.hass, metadata, statistics)
+            # Then add the statistics data
+            async_add_external_statistics(self.hass, metadata, statistics)
 
-        _LOGGER.debug(
-            "Updated statistics for %s with %d data points", entity_id, len(statistics)
-        )
+            _LOGGER.debug(
+                "Updated statistics for %s with %d data points",
+                entity_id,
+                len(statistics),
+            )
+        except ValueError as err:
+            _LOGGER.warning(
+                "Failed to update statistics for %s: %s",
+                entity_id,
+                err,
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unexpected error updating statistics for %s",
+                entity_id,
+            )
+
+    def _register_statistics_metadata(self, metadata: StatisticMetaData) -> None:
+        """
+        Register statistics metadata in the database.
+
+        This ensures the metadata exists before adding statistics data.
+        """
+        import sqlite3
+
+        from homeassistant.helpers.recorder import get_instance
+
+        recorder = get_instance(self.hass)
+        if not recorder or not recorder.db_url:
+            _LOGGER.error("Cannot access recorder database")
+            return
+
+        # Extract SQLite database path from URL
+        if not recorder.db_url.startswith("sqlite:///"):
+            _LOGGER.error(
+                "Only SQLite databases are supported for metadata registration"
+            )
+            return
+
+        db_path = recorder.db_url[10:]  # Remove 'sqlite:///' prefix
+
+        try:
+            conn = sqlite3.connect(db_path)
+
+            # Check if metadata already exists
+            cursor = conn.execute(
+                "SELECT id FROM statistics_meta WHERE statistic_id = ? AND source = ?",
+                (metadata["statistic_id"], metadata["source"]),
+            )
+
+            if cursor.fetchone():
+                # Metadata already exists
+                conn.close()
+                return
+
+            # Insert new metadata
+            conn.execute(
+                """INSERT INTO statistics_meta
+                   (statistic_id, source, unit_of_measurement, has_mean, has_sum, name)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    metadata["statistic_id"],
+                    metadata["source"],
+                    metadata["unit_of_measurement"],
+                    metadata["has_mean"],
+                    metadata["has_sum"],
+                    metadata["name"],
+                ),
+            )
+
+            conn.commit()
+            conn.close()
+
+            _LOGGER.debug(
+                "Registered statistics metadata for %s",
+                metadata["statistic_id"],
+            )
+
+        except sqlite3.Error:
+            _LOGGER.exception(
+                "Error registering statistics metadata for %s",
+                metadata["statistic_id"],
+            )
