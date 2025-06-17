@@ -112,6 +112,9 @@ class MeterMateDataManager:
         # Update Home Assistant statistics
         await self._update_statistics(entity_id)
 
+        # Update the sensor value to the latest cumulative reading
+        await self._update_sensor_value(entity_id)
+
         _LOGGER.info(
             "Added reading for %s: %s %s at %s",
             entity_id,
@@ -266,6 +269,9 @@ class MeterMateDataManager:
                 # Update Home Assistant statistics
                 await self._update_statistics(entity_id)
 
+                # Update the sensor value to the latest cumulative reading
+                await self._update_sensor_value(entity_id)
+
                 _LOGGER.info("Updated reading %s for %s", reading_id, entity_id)
 
                 return OperationResult(
@@ -292,6 +298,9 @@ class MeterMateDataManager:
 
                 # Update Home Assistant statistics
                 await self._update_statistics(entity_id)
+
+                # Update the sensor value to the latest cumulative reading
+                await self._update_sensor_value(entity_id)
 
                 _LOGGER.info(
                     "Deleted reading %s for %s (value: %s at %s)",
@@ -341,6 +350,9 @@ class MeterMateDataManager:
         # Update Home Assistant statistics
         await self._update_statistics(entity_id)
 
+        # Update the sensor value to the latest cumulative reading
+        await self._update_sensor_value(entity_id)
+
         _LOGGER.info(
             "Deleted %d readings for %s in period %s to %s",
             len(readings_to_remove),
@@ -384,6 +396,8 @@ class MeterMateDataManager:
         """Recalculate and update statistics for an entity."""
         try:
             await self._update_statistics(entity_id)
+            # Also update the sensor value to the latest cumulative reading
+            await self._update_sensor_value(entity_id)
             return OperationResult(
                 success=True, message="Statistics recalculated successfully"
             )
@@ -405,13 +419,14 @@ class MeterMateDataManager:
         # Get the sensor configuration
         unit = readings[0].unit if readings else "kWh"
 
-        # Create metadata first
+        # Create metadata first - use proper statistic_id format for external statistics
+        statistic_id = f"{DOMAIN}:{entity_id}"
         metadata = StatisticMetaData(
             has_mean=False,
             has_sum=True,
-            name=entity_id,
+            name=entity_id.replace("sensor.", "").replace("_", " ").title(),
             source=DOMAIN,
-            statistic_id=entity_id,
+            statistic_id=statistic_id,
             unit_of_measurement=unit,
         )
 
@@ -434,12 +449,7 @@ class MeterMateDataManager:
             )
 
         try:
-            # First, add metadata only to ensure it exists
-            await self.hass.async_add_executor_job(
-                self._register_statistics_metadata, metadata
-            )
-
-            # Then add the statistics data
+            # Add external statistics - Home Assistant handles metadata registration
             async_add_external_statistics(self.hass, metadata, statistics)
 
             _LOGGER.debug(
@@ -459,69 +469,33 @@ class MeterMateDataManager:
                 entity_id,
             )
 
-    def _register_statistics_metadata(self, metadata: StatisticMetaData) -> None:
-        """
-        Register statistics metadata in the database.
-
-        This ensures the metadata exists before adding statistics data.
-        """
-        import sqlite3
-
-        from homeassistant.helpers.recorder import get_instance
-
-        recorder = get_instance(self.hass)
-        if not recorder or not recorder.db_url:
-            _LOGGER.error("Cannot access recorder database")
+    async def _update_sensor_value(self, entity_id: str) -> None:
+        """Update the sensor value to the latest cumulative reading."""
+        # Get the latest cumulative reading
+        readings = await self.get_all_readings(entity_id)
+        if not readings:
             return
 
-        # Extract SQLite database path from URL
-        if not recorder.db_url.startswith("sqlite:///"):
-            _LOGGER.error(
-                "Only SQLite databases are supported for metadata registration"
-            )
+        # Find the latest cumulative reading
+        cumulative_readings = [
+            r for r in readings if r.reading_type == ReadingType.CUMULATIVE
+        ]
+        if not cumulative_readings:
             return
 
-        db_path = recorder.db_url[10:]  # Remove 'sqlite:///' prefix
+        latest_reading = max(cumulative_readings, key=lambda r: r.timestamp)
 
-        try:
-            conn = sqlite3.connect(db_path)
-
-            # Check if metadata already exists
-            cursor = conn.execute(
-                "SELECT id FROM statistics_meta WHERE statistic_id = ? AND source = ?",
-                (metadata["statistic_id"], metadata["source"]),
-            )
-
-            if cursor.fetchone():
-                # Metadata already exists
-                conn.close()
-                return
-
-            # Insert new metadata
-            conn.execute(
-                """INSERT INTO statistics_meta
-                   (statistic_id, source, unit_of_measurement, has_mean, has_sum, name)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (
-                    metadata["statistic_id"],
-                    metadata["source"],
-                    metadata["unit_of_measurement"],
-                    metadata["has_mean"],
-                    metadata["has_sum"],
-                    metadata["name"],
-                ),
-            )
-
-            conn.commit()
-            conn.close()
-
+        # Get the sensor entity and update its value
+        if (
+            DOMAIN in self.hass.data
+            and "entities" in self.hass.data[DOMAIN]
+            and entity_id in self.hass.data[DOMAIN]["entities"]
+        ):
+            sensor = self.hass.data[DOMAIN]["entities"][entity_id]
+            await sensor.update_value(latest_reading.value)
             _LOGGER.debug(
-                "Registered statistics metadata for %s",
-                metadata["statistic_id"],
-            )
-
-        except sqlite3.Error:
-            _LOGGER.exception(
-                "Error registering statistics metadata for %s",
-                metadata["statistic_id"],
+                "Updated sensor %s value to %s %s",
+                entity_id,
+                latest_reading.value,
+                latest_reading.unit,
             )
