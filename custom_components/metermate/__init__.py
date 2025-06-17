@@ -2,6 +2,7 @@
 """
 MeterMate integration for Home Assistant.
 
+A comprehensive data source for manual utility readings with full CRUD capabilities.
 For more details about this integration, please refer to
 https://github.com/Amoenus/metermate
 """
@@ -13,6 +14,7 @@ from typing import TYPE_CHECKING
 from homeassistant.const import Platform
 
 from .const import DOMAIN
+from .data_manager import MeterMateDataManager
 from .services import async_setup_services, async_unload_services
 
 if TYPE_CHECKING:
@@ -28,6 +30,17 @@ PLATFORMS: list[Platform] = [
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:  # noqa: ARG001
     """Set up the MeterMate integration."""
+    # Initialize the data manager
+    data_manager = MeterMateDataManager(hass)
+    await data_manager.async_load()
+
+    # Store the data manager
+    hass.data.setdefault(DOMAIN, {})["data_manager"] = data_manager
+
+    # Set up services
+    await async_setup_services(hass, data_manager)
+
+    return True
     await async_setup_services(hass)
     return True
 

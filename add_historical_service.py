@@ -2,13 +2,10 @@
 """Safe historical data addition using the MeterMate service."""
 
 import json
-import subprocess
-from datetime import datetime
 
 
-def add_historical_data_via_service():
+def add_historical_data_via_service() -> bool:
     """Add historical data using Home Assistant service call."""
-
     print("Adding 203.0 kWh for June 15th using MeterMate service...")
 
     # Prepare the service call data
@@ -52,7 +49,6 @@ def add_historical_data_via_service():
 
 def show_alternative_approach():
     """Show how to use the Developer Tools in Home Assistant."""
-
     print("\n" + "=" * 60)
     print("ALTERNATIVE: Use Home Assistant Developer Tools")
     print("=" * 60)

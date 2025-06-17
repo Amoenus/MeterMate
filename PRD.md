@@ -170,25 +170,25 @@ Key Benefits of SQLAlchemy Integration:
 ```python
 class MeterMateDataManager:
     """Full CRUD data management interface for MeterMate utility readings."""
-    
+
     # CREATE operations
     async def add_reading(self, entity_id: str, reading: Reading) -> OperationResult
     async def bulk_import(self, entity_id: str, readings: List[Reading]) -> BulkResult
-    
+
     # READ operations
     async def get_reading(self, reading_id: str) -> Reading | None
     async def get_readings(self, entity_id: str, period: TimePeriod) -> List[Reading]
     async def get_all_readings(self, entity_id: str) -> List[Reading]
-    
+
     # UPDATE operations
     async def update_reading(self, reading_id: str, reading: Reading) -> OperationResult
     async def bulk_update(self, updates: List[ReadingUpdate]) -> BulkResult
-    
+
     # DELETE operations
     async def delete_reading(self, reading_id: str) -> OperationResult
     async def delete_readings(self, entity_id: str, period: TimePeriod) -> OperationResult
     async def bulk_delete(self, reading_ids: List[str]) -> BulkResult
-    
+
     # VALIDATION and UTILITY
     async def validate_data(self, readings: List[Reading]) -> ValidationResult
     async def recalculate_statistics(self, entity_id: str) -> OperationResult
@@ -203,7 +203,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
 class MeterMateReading(db_schema.Base):
     """Model for storing MeterMate readings with full audit trail."""
     __tablename__ = "metermate_readings"
-    
+
     id = Column(Integer, primary_key=True)
     entity_id = Column(String, nullable=False)
     timestamp = Column(DateTime, nullable=False)
@@ -211,14 +211,14 @@ class MeterMateReading(db_schema.Base):
     reading_type = Column(String, nullable=False)  # cumulative, periodic
     operation_id = Column(String, nullable=False)  # for rollback tracking
     created_at = Column(DateTime, default=func.now())
-    
+
     # Relationship to Home Assistant's statistics
     statistics = relationship("Statistics", back_populates="metermate_readings")
 ```
 
 9.4. Core Requirements for Historical Data (Updated):
 1. **SQLAlchemy ORM Integration**: Use Home Assistant's SQLAlchemy session and models
-2. **Proper Transaction Management**: Ensure ACID compliance with proper rollback capabilities  
+2. **Proper Transaction Management**: Ensure ACID compliance with proper rollback capabilities
 3. **Home Assistant Schema Compatibility**: Respect existing `statistics_meta`, `statistics`, and `statistics_short_term` table structures
 4. **Audit Trail**: Complete tracking of all data operations for troubleshooting and rollback
 5. **Data Validation**: Comprehensive validation before database operations
@@ -228,7 +228,7 @@ class MeterMateReading(db_schema.Base):
 9.5. Implementation Phases:
 **Phase 1**: Replace direct SQLite operations with SQLAlchemy ORM
 **Phase 2**: Implement advanced data management interface
-**Phase 3**: Add bulk import and export capabilities  
+**Phase 3**: Add bulk import and export capabilities
 **Phase 4**: Implement comprehensive audit trail and rollback features
 **Phase 5**: Create management UI components for advanced operations
 

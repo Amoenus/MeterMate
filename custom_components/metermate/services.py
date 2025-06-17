@@ -1,357 +1,403 @@
-"""Services for MeterMate integration."""
+"""Services for MeterMate integration using the new data management interface."""
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 from homeassistant.util import dt as dt_util
 
-from .const import (
-    ATTR_END_DATE,
-    ATTR_ENTITY_ID,
-    ATTR_MODE,
-    ATTR_START_DATE,
-    ATTR_TIMESTAMP,
-    ATTR_VALUE,
-    DOMAIN,
-    LOGGER,
-    MODE_CUMULATIVE,
-    MODE_PERIODIC,
-    SERVICE_ADD_READING,
-)
-from .database import HistoricalDataHandler
+from .const import DOMAIN
+from .data_manager import MeterMateDataManager, TimePeriod
+from .models import Reading, ReadingType
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from homeassistant.core import HomeAssistant, ServiceCall
 
+_LOGGER = logging.getLogger(__name__)
+
+# Service names
+SERVICE_ADD_READING = "add_reading"
+SERVICE_UPDATE_READING = "update_reading"
+SERVICE_DELETE_READING = "delete_reading"
+SERVICE_GET_READINGS = "get_readings"
+SERVICE_BULK_IMPORT = "bulk_import"
+SERVICE_RECALCULATE_STATISTICS = "recalculate_statistics"
+
+# Service schemas
 SERVICE_ADD_READING_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
-        vol.Required(ATTR_VALUE): vol.Coerce(float),
-        vol.Optional(ATTR_MODE, default=MODE_CUMULATIVE): vol.In(
-            [MODE_CUMULATIVE, MODE_PERIODIC]
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("value"): vol.Coerce(float),
+        vol.Optional("timestamp"): cv.datetime,
+        vol.Optional("reading_type", default="cumulative"): vol.In(
+            ["cumulative", "periodic"]
         ),
-        vol.Optional(ATTR_TIMESTAMP): cv.datetime,
-        vol.Optional(ATTR_START_DATE): cv.date,
-        vol.Optional(ATTR_END_DATE): cv.date,
+        vol.Optional("unit", default="kWh"): cv.string,
+        vol.Optional("notes"): cv.string,
+    }
+)
+
+SERVICE_UPDATE_READING_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("reading_id"): cv.string,
+        vol.Required("value"): vol.Coerce(float),
+        vol.Optional("timestamp"): cv.datetime,
+        vol.Optional("reading_type", default="cumulative"): vol.In(
+            ["cumulative", "periodic"]
+        ),
+        vol.Optional("unit", default="kWh"): cv.string,
+        vol.Optional("notes"): cv.string,
+    }
+)
+
+SERVICE_DELETE_READING_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("reading_id"): cv.string,
+    }
+)
+
+SERVICE_GET_READINGS_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Optional("start_date"): cv.datetime,
+        vol.Optional("end_date"): cv.datetime,
+    }
+)
+
+SERVICE_BULK_IMPORT_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("readings"): vol.All(
+            cv.ensure_list,
+            [
+                vol.Schema(
+                    {
+                        vol.Required("timestamp"): cv.datetime,
+                        vol.Required("value"): vol.Coerce(float),
+                        vol.Optional("reading_type", default="cumulative"): vol.In(
+                            ["cumulative", "periodic"]
+                        ),
+                        vol.Optional("unit", default="kWh"): cv.string,
+                        vol.Optional("notes"): cv.string,
+                    }
+                )
+            ],
+        ),
+    }
+)
+
+SERVICE_RECALCULATE_STATISTICS_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
     }
 )
 
 
-async def async_setup_services(hass: HomeAssistant) -> None:
-    """Set up services for MeterMate."""
+class MeterMateServices:
+    """Service handler for MeterMate integration."""
 
-    LOGGER.error("🔧 DEBUG: Setting up MeterMate services...")
+    def __init__(self, hass: HomeAssistant, data_manager: MeterMateDataManager) -> None:
+        """Initialize the service handler."""
+        self.hass = hass
+        self.data_manager = data_manager
 
-    async def handle_add_reading(call: ServiceCall) -> None:
-        """Handle the add_reading service call."""
-        LOGGER.error("🔧 DEBUG: MeterMate service called with data: %s", call.data)
+    async def async_register_services(self) -> None:
+        """Register all MeterMate services."""
+        _LOGGER.info("Registering MeterMate services")
 
-        entity_id = call.data[ATTR_ENTITY_ID]
-        value = call.data[ATTR_VALUE]
-        mode = call.data[ATTR_MODE]
-
-        # Validate entity
-        if not await _validate_entity(hass, entity_id):
-            return
-
-        # Validate mode-specific required fields
-        if mode == MODE_PERIODIC:
-            start_date = call.data.get(ATTR_START_DATE)
-            end_date = call.data.get(ATTR_END_DATE)
-            if not start_date or not end_date:
-                LOGGER.error("start_date and end_date are required for periodic mode")
-                return
-        elif mode == MODE_CUMULATIVE:
-            timestamp = call.data.get(ATTR_TIMESTAMP)
-            if not timestamp:
-                LOGGER.warning(
-                    "No timestamp provided for cumulative reading. "
-                    "Data will be recorded for current time. "
-                    "For historical data, provide a timestamp."
-                )
-
-        # Get current state
-        current_total = await _get_current_total(hass, entity_id)
-        if current_total is None:
-            return
-
-        # Get initial reading
-        initial_reading = await _get_initial_reading(hass, entity_id)
-
-        # Process reading based on mode
-        if mode == MODE_CUMULATIVE:
-            await _process_cumulative_reading(
-                hass, call, entity_id, value, initial_reading
-            )
-        elif mode == MODE_PERIODIC:
-            await _process_periodic_reading(hass, call, entity_id, value, current_total)
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_ADD_READING,
-        handle_add_reading,
-        schema=SERVICE_ADD_READING_SCHEMA,
-    )
-
-    LOGGER.error("🔧 DEBUG: MeterMate service 'add_reading' registered successfully!")
-
-
-async def _validate_entity(hass: HomeAssistant, entity_id: str) -> bool:
-    """Validate that the entity exists and is a MeterMate entity."""
-    entity_registry = async_get_entity_registry(hass)
-    entity_entry = entity_registry.async_get(entity_id)
-
-    if not entity_entry:
-        LOGGER.error("Entity %s not found", entity_id)
-        return False
-
-    if entity_entry.platform != DOMAIN:
-        LOGGER.error("Entity %s is not a MeterMate entity", entity_id)
-        return False
-
-    return True
-
-
-async def _get_current_total(hass: HomeAssistant, entity_id: str) -> float | None:
-    """Get the current total from the entity state."""
-    state = hass.states.get(entity_id)
-    if not state:
-        LOGGER.error("State for entity %s not found", entity_id)
-        return None
-
-    try:
-        if state.state not in ("unknown", "unavailable"):
-            return float(state.state)
-        return 0.0  # noqa: TRY300
-    except (ValueError, TypeError):
-        return 0.0
-
-
-async def _get_initial_reading(hass: HomeAssistant, entity_id: str) -> float:
-    """Get the initial reading from the config entry."""
-    entity_registry = async_get_entity_registry(hass)
-    entity_entry = entity_registry.async_get(entity_id)
-
-    if not entity_entry:
-        return 0.0
-
-    config_entries = hass.config_entries.async_entries(DOMAIN)
-    for entry in config_entries:
-        if entry.entry_id == entity_entry.config_entry_id:
-            return float(entry.data.get("initial_reading", 0))
-
-    return 0.0
-
-
-async def _process_cumulative_reading(
-    hass: HomeAssistant,
-    call: ServiceCall,
-    entity_id: str,
-    value: float,
-    initial_reading: float,
-) -> None:
-    """Process a cumulative reading."""
-    timestamp = call.data.get(ATTR_TIMESTAMP)
-
-    LOGGER.info(
-        "Processing cumulative reading for %s: value=%s, initial=%s, timestamp=%s",
-        entity_id,
-        value,
-        initial_reading,
-        timestamp,
-    )
-
-    if timestamp is None:
-        # If no timestamp provided, log a warning and use current time
-        LOGGER.warning(
-            "No timestamp provided for cumulative reading. Using current time. "
-            "Consider providing a timestamp for accurate historical data."
-        )
-        timestamp = dt_util.now()
-    elif timestamp.tzinfo is None:
-        timestamp = dt_util.as_local(timestamp)
-
-    LOGGER.info(
-        "Final timestamp for %s: %s (timezone: %s)",
-        entity_id,
-        timestamp,
-        timestamp.tzinfo,
-    )
-
-    # Calculate new total: reading - initial_reading
-    new_total = value - initial_reading
-
-    # Import the statistic
-    await _import_statistic(hass, entity_id, timestamp, new_total)
-
-    state = hass.states.get(entity_id)
-    unit = state.attributes.get("unit_of_measurement", "") if state else ""
-
-    LOGGER.info(
-        "Added cumulative reading for %s: %s %s (new total: %s)",
-        entity_id,
-        value,
-        unit,
-        new_total,
-    )
-
-
-async def _process_periodic_reading(
-    hass: HomeAssistant,
-    call: ServiceCall,
-    entity_id: str,
-    value: float,
-    current_total: float,
-) -> None:
-    """Process a periodic reading."""
-    start_date = call.data.get(ATTR_START_DATE)
-    end_date = call.data.get(ATTR_END_DATE)
-
-    if not start_date or not end_date:
-        LOGGER.error("start_date and end_date are required for periodic mode")
-        return
-
-    # Use end_date as the timestamp
-    timestamp = dt_util.start_of_local_day(end_date)
-    timestamp = timestamp.replace(hour=23, minute=59, second=59)
-
-    # Add consumption to current total
-    new_total = current_total + value
-
-    # Import the statistic
-    await _import_statistic(hass, entity_id, timestamp, new_total)
-
-    state = hass.states.get(entity_id)
-    unit = state.attributes.get("unit_of_measurement", "") if state else ""
-
-    LOGGER.info(
-        "Added periodic reading for %s: %s %s (period: %s to %s, new total: %s)",
-        entity_id,
-        value,
-        unit,
-        start_date,
-        end_date,
-        new_total,
-    )
-
-
-async def _import_statistic(
-    hass: HomeAssistant, entity_id: str, timestamp: datetime, new_total: float
-) -> None:
-    """Import a statistic into Home Assistant."""
-    LOGGER.info(
-        "Processing statistic for %s: %s at %s", entity_id, new_total, timestamp
-    )
-
-    # Try to import historical statistic if not today
-    current_date = dt_util.now().date()
-    statistic_date = timestamp.date()
-
-    # Debug logging to understand the date comparison
-    LOGGER.error(
-        "🔍 DEBUG: Date comparison for %s: current_date=%s, statistic_date=%s, is_historical=%s",
-        entity_id,
-        current_date,
-        statistic_date,
-        statistic_date != current_date,
-    )
-
-    if statistic_date != current_date:
-        # This is historical data, try to import as historical statistic
-        LOGGER.error("🔍 DEBUG: Calling _add_historical_statistic for %s", entity_id)
-        await _add_historical_statistic(hass, entity_id, timestamp, new_total)
-    else:
-        # This is current data, update current state
-        LOGGER.error("🔍 DEBUG: Calling _update_current_state for %s", entity_id)
-        await _update_current_state(hass, entity_id, new_total)
-
-    LOGGER.info("Processed statistic for %s: %s", entity_id, new_total)
-
-
-async def _add_historical_statistic(
-    hass: HomeAssistant, entity_id: str, timestamp: datetime, value: float
-) -> None:
-    """Add historical statistic to Home Assistant statistics database."""
-    try:
-        # Get entity state for unit and name
-        state = hass.states.get(entity_id)
-        if not state:
-            LOGGER.error("Entity %s not found for historical import", entity_id)
-            await _update_current_state(hass, entity_id, value)
-            return
-
-        unit = state.attributes.get("unit_of_measurement", "kWh")
-        name = state.attributes.get("friendly_name", entity_id)
-
-        # Use our database handler for direct database access
-        db_handler = HistoricalDataHandler(hass)
-
-        # Validate database access first
-        if not db_handler.validate_database_access():
-            LOGGER.warning(
-                "Cannot access database for historical import of %s. "
-                "Falling back to current state update.",
-                entity_id,
-            )
-            await _update_current_state(hass, entity_id, value)
-            return
-
-        # Add the historical statistic
-        success = db_handler.add_historical_statistic(
-            entity_id, timestamp, value, unit, name
+        # Register add_reading service
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_ADD_READING,
+            self._handle_add_reading,
+            schema=SERVICE_ADD_READING_SCHEMA,
         )
 
-        if success:
-            LOGGER.info(
-                "Successfully imported historical statistic for %s: %s at %s",
+        # Register update_reading service
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_UPDATE_READING,
+            self._handle_update_reading,
+            schema=SERVICE_UPDATE_READING_SCHEMA,
+        )
+
+        # Register delete_reading service
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_DELETE_READING,
+            self._handle_delete_reading,
+            schema=SERVICE_DELETE_READING_SCHEMA,
+        )
+
+        # Register get_readings service
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_GET_READINGS,
+            self._handle_get_readings,
+            schema=SERVICE_GET_READINGS_SCHEMA,
+        )
+
+        # Register bulk_import service
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_BULK_IMPORT,
+            self._handle_bulk_import,
+            schema=SERVICE_BULK_IMPORT_SCHEMA,
+        )
+
+        # Register recalculate_statistics service
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_RECALCULATE_STATISTICS,
+            self._handle_recalculate_statistics,
+            schema=SERVICE_RECALCULATE_STATISTICS_SCHEMA,
+        )
+
+        _LOGGER.info("MeterMate services registered successfully")
+
+    async def async_unregister_services(self) -> None:
+        """Unregister all MeterMate services."""
+        services_to_remove = [
+            SERVICE_ADD_READING,
+            SERVICE_UPDATE_READING,
+            SERVICE_DELETE_READING,
+            SERVICE_GET_READINGS,
+            SERVICE_BULK_IMPORT,
+            SERVICE_RECALCULATE_STATISTICS,
+        ]
+
+        for service in services_to_remove:
+            self.hass.services.async_remove(DOMAIN, service)
+
+        _LOGGER.info("MeterMate services unregistered")
+
+    async def _handle_add_reading(self, call: ServiceCall) -> None:
+        """Handle add_reading service call."""
+        entity_id = call.data["entity_id"]
+        value = call.data["value"]
+        timestamp = call.data.get("timestamp", dt_util.utcnow())
+        reading_type_str = call.data.get("reading_type", "cumulative")
+        unit = call.data.get("unit", "kWh")
+        notes = call.data.get("notes")
+
+        # Ensure timestamp is timezone-aware
+        if timestamp is not None:
+            timestamp = dt_util.as_utc(timestamp)
+
+        # Convert string to enum
+        reading_type = (
+            ReadingType.CUMULATIVE
+            if reading_type_str == "cumulative"
+            else ReadingType.PERIODIC
+        )
+
+        # Create reading object
+        reading = Reading(
+            timestamp=timestamp,
+            value=value,
+            reading_type=reading_type,
+            unit=unit,
+            notes=notes,
+        )
+
+        # Add the reading
+        result = await self.data_manager.add_reading(entity_id, reading)
+
+        if result.success:
+            _LOGGER.info(
+                "Successfully added reading for %s: %s %s at %s",
                 entity_id,
                 value,
+                unit,
                 timestamp,
             )
-            # Historical data imported successfully - do not update current state
-            # Historical readings should not affect the current sensor value
         else:
-            LOGGER.warning(
-                "Failed to import historical statistic for %s. "
-                "Falling back to current state update.",
+            _LOGGER.error(
+                "Failed to add reading for %s: %s",
+                entity_id,
+                result.message,
+            )
+
+    async def _handle_update_reading(self, call: ServiceCall) -> None:
+        """Handle update_reading service call."""
+        entity_id = call.data["entity_id"]
+        reading_id = call.data["reading_id"]
+        value = call.data["value"]
+        timestamp = call.data.get("timestamp", dt_util.utcnow())
+        reading_type_str = call.data.get("reading_type", "cumulative")
+        unit = call.data.get("unit", "kWh")
+        notes = call.data.get("notes")
+
+        # Ensure timestamp is timezone-aware
+        if timestamp is not None:
+            timestamp = dt_util.as_utc(timestamp)
+
+        # Convert string to enum
+        reading_type = (
+            ReadingType.CUMULATIVE
+            if reading_type_str == "cumulative"
+            else ReadingType.PERIODIC
+        )
+
+        # Create updated reading object
+        updated_reading = Reading(
+            timestamp=timestamp,
+            value=value,
+            reading_type=reading_type,
+            unit=unit,
+            notes=notes,
+        )
+
+        # Update the reading
+        result = await self.data_manager.update_reading(
+            entity_id, reading_id, updated_reading
+        )
+
+        if result.success:
+            _LOGGER.info(
+                "Successfully updated reading %s for %s",
+                reading_id,
                 entity_id,
             )
-            await _update_current_state(hass, entity_id, value)
-
-    except (ValueError, TypeError, AttributeError) as e:
-        LOGGER.error(
-            "Unexpected error importing historical statistic for %s: %s",
-            entity_id,
-            e,
-        )
-        # Fallback to updating current state
-        await _update_current_state(hass, entity_id, value)
-
-
-async def _update_current_state(
-    hass: HomeAssistant, entity_id: str, value: float
-) -> None:
-    """Update the current state of the entity."""
-    if DOMAIN in hass.data and "entities" in hass.data[DOMAIN]:
-        entity = hass.data[DOMAIN]["entities"].get(entity_id)
-        if entity and hasattr(entity, "update_value"):
-            LOGGER.debug("Updating current state for %s to %s", entity_id, value)
-            await entity.update_value(value)
-            LOGGER.debug("Successfully updated current state for %s", entity_id)
         else:
-            LOGGER.error(
-                "Could not find entity object for %s to update state", entity_id
+            _LOGGER.error(
+                "Failed to update reading %s for %s: %s",
+                reading_id,
+                entity_id,
+                result.message,
             )
-    else:
-        LOGGER.error("Domain data not found for %s", entity_id)
+
+    async def _handle_delete_reading(self, call: ServiceCall) -> None:
+        """Handle delete_reading service call."""
+        entity_id = call.data["entity_id"]
+        reading_id = call.data["reading_id"]
+
+        # Delete the reading
+        result = await self.data_manager.delete_reading(entity_id, reading_id)
+
+        if result.success:
+            _LOGGER.info(
+                "Successfully deleted reading %s for %s",
+                reading_id,
+                entity_id,
+            )
+        else:
+            _LOGGER.error(
+                "Failed to delete reading %s for %s: %s",
+                reading_id,
+                entity_id,
+                result.message,
+            )
+
+    async def _handle_get_readings(self, call: ServiceCall) -> None:
+        """Handle get_readings service call."""
+        entity_id = call.data["entity_id"]
+        start_date = call.data.get("start_date")
+        end_date = call.data.get("end_date")
+
+        # Ensure dates are timezone-aware
+        if start_date is not None:
+            start_date = dt_util.as_utc(start_date)
+        if end_date is not None:
+            end_date = dt_util.as_utc(end_date)
+
+        period = None
+        if start_date and end_date:
+            period = TimePeriod(start=start_date, end=end_date)
+
+        # Get the readings
+        readings = await self.data_manager.get_readings(entity_id, period)
+
+        _LOGGER.info(
+            "Retrieved %d readings for %s",
+            len(readings),
+            entity_id,
+        )
+
+        # Note: In a real implementation, you might want to return this data
+        # For now, we just log it
+
+    async def _handle_bulk_import(self, call: ServiceCall) -> None:
+        """Handle bulk_import service call."""
+        entity_id = call.data["entity_id"]
+        readings_data = call.data["readings"]
+
+        # Convert readings data to Reading objects
+        readings = []
+        for reading_data in readings_data:
+            reading_type_str = reading_data.get("reading_type", "cumulative")
+            reading_type = (
+                ReadingType.CUMULATIVE
+                if reading_type_str == "cumulative"
+                else ReadingType.PERIODIC
+            )
+
+            # Ensure timestamp is timezone-aware
+            timestamp = reading_data["timestamp"]
+            if timestamp is not None:
+                timestamp = dt_util.as_utc(timestamp)
+
+            reading = Reading(
+                timestamp=timestamp,
+                value=reading_data["value"],
+                reading_type=reading_type,
+                unit=reading_data.get("unit", "kWh"),
+                notes=reading_data.get("notes"),
+            )
+            readings.append(reading)
+
+        # Bulk import the readings
+        result = await self.data_manager.bulk_import(entity_id, readings)
+
+        _LOGGER.info(
+            "Bulk import for %s completed: %d successful, %d errors",
+            entity_id,
+            result["success_count"],
+            result["error_count"],
+        )
+
+        if result["errors"]:
+            _LOGGER.warning("Bulk import errors: %s", result["errors"])
+
+    async def _handle_recalculate_statistics(self, call: ServiceCall) -> None:
+        """Handle recalculate_statistics service call."""
+        entity_id = call.data["entity_id"]
+
+        # Recalculate statistics
+        result = await self.data_manager.recalculate_statistics(entity_id)
+
+        if result.success:
+            _LOGGER.info(
+                "Successfully recalculated statistics for %s",
+                entity_id,
+            )
+        else:
+            _LOGGER.error(
+                "Failed to recalculate statistics for %s: %s",
+                entity_id,
+                result.message,
+            )
+
+
+async def async_setup_services(
+    hass: HomeAssistant, data_manager: MeterMateDataManager
+) -> None:
+    """Set up MeterMate services."""
+    services = MeterMateServices(hass, data_manager)
+    await services.async_register_services()
+
+    # Store the services instance for later cleanup
+    hass.data.setdefault(DOMAIN, {})["services"] = services
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:
-    """Unload services for MeterMate."""
-    hass.services.async_remove(DOMAIN, SERVICE_ADD_READING)
+    """Unload MeterMate services."""
+    if DOMAIN in hass.data and "services" in hass.data[DOMAIN]:
+        services = hass.data[DOMAIN]["services"]
+        await services.async_unregister_services()
+        del hass.data[DOMAIN]["services"]

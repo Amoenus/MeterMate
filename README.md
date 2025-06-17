@@ -10,17 +10,46 @@
 [![Discord][discord-shield]][discord]
 [![Community Forum][forum-shield]][forum]
 
-**Your smart friend for your dumb meter**
+# MeterMate
 
-MeterMate is a Home Assistant custom integration that allows you to manually enter utility readings from traditional "dumb" meters and make them compatible with Home Assistant's Energy Dashboard.
+[![GitHub Release][releases-shield]][releases]
+[![GitHub Activity][commits-shield]][commits]
+[![License][license-shield]](LICENSE)
 
-## Features
+[![hacs][hacsbadge]][hacs]
+[![Project Maintenance][maintenance-shield]][user_profile]
 
-- **Simple Setup**: Easy configuration through the Home Assistant UI
-- **Energy Dashboard Compatible**: Creates sensors that work directly with Home Assistant's Energy Dashboard
-- **Flexible Input**: Support for both cumulative meter readings and periodic consumption data
-- **Multiple Utilities**: Works with electricity, gas, water, and other utility meters
-- **Manual Data Entry**: Perfect for users without smart meters or automated monitoring devices
+[![Discord][discord-shield]][discord]
+[![Community Forum][forum-shield]][forum]
+
+**A comprehensive data source for manual utility readings with full CRUD capabilities**
+
+MeterMate is a Home Assistant custom integration that transforms manual utility data entry into a powerful, user-friendly experience. It provides full Create, Read, Update, Delete (CRUD) capabilities for managing utility meter readings and seamlessly integrates with Home Assistant's Energy Dashboard.
+
+## 🎯 Value Proposition
+
+MeterMate adds significant value by:
+
+- **Full CRUD Interface**: Complete data management for all your utility readings
+- **Dedicated Data Source**: Acts as a standalone data source specifically for manual utility data
+- **Energy Dashboard Integration**: Seamlessly exposes data as if it were from smart meters
+- **User-Friendly Management**: Intuitive service interface for all data operations
+- **Data Integrity**: Maintains consistency and provides validation for all entries
+
+## ✨ Features
+
+### Core Capabilities
+- **Complete Data Management**: Full CRUD operations (Create, Read, Update, Delete)
+- **Multiple Data Entry Methods**: Cumulative meter readings and periodic consumption data
+- **Bulk Operations**: Import multiple readings at once from spreadsheets or bills
+- **Data Validation**: Comprehensive validation with helpful error messages
+- **Audit Trail**: Track all changes with operation IDs and timestamps
+
+### Integration Features
+- **Energy Dashboard Ready**: Works directly with Home Assistant's Energy Dashboard
+- **Service Interface**: Rich set of services for automation and scripting
+- **Multiple Utilities**: Electricity, gas, water, and custom utility types
+- **Flexible Units**: Support for kWh, m³, gallons, and custom units
 
 ## Installation
 
@@ -88,78 +117,128 @@ data:
   end_date: "2023-05-31"
 ```
 
-## Creating Dashboard Cards
+## 🚀 Usage Examples
 
-### Simple Input Card (Recommended for MVP)
+MeterMate provides a comprehensive set of services for managing your utility data:
 
-Create an `input_number` helper and a script to make data entry easier:
-
-1. Go to Settings > Devices & Services > Helpers
-2. Create a new "Number" helper (e.g., `input_number.meter_reading`)
-3. Create an automation or script to call the service:
+### Add a Meter Reading
 
 ```yaml
-alias: "Add Meter Reading"
-sequence:
-  - service: metermate.add_reading
-    data:
-      entity_id: sensor.main_electricity_meter
-      value: "{{ states('input_number.meter_reading') | float }}"
-      mode: cumulative
+# Add a cumulative meter reading (from physical meter)
+service: metermate.add_reading
+target:
+  entity_id: sensor.electricity_meter
+data:
+  value: 15432.5
+  timestamp: "2025-06-01T10:00:00"
+  reading_type: "cumulative"
+  unit: "kWh"
+  notes: "Monthly meter reading"
 ```
 
-## Energy Dashboard Integration
+### Add Utility Bill Data
 
-1. Go to Settings > Dashboards > Energy
-2. Click "Add Consumption"
-3. Select your MeterMate sensor
-4. Configure the energy source settings as needed
+```yaml
+# Add periodic consumption data (from utility bill)
+service: metermate.add_reading
+target:
+  entity_id: sensor.gas_meter
+data:
+  value: 125.3
+  reading_type: "periodic"
+  unit: "m³"
+  notes: "May utility bill - 125.3 m³ consumed"
+```
 
-Your manual readings will now appear in the Energy Dashboard with proper historical tracking.
+### Bulk Import Multiple Readings
 
-## Troubleshooting
+```yaml
+# Import multiple readings at once
+service: metermate.bulk_import
+target:
+  entity_id: sensor.water_meter
+data:
+  readings:
+    - timestamp: "2025-01-31T23:59:59"
+      value: 234.1
+      reading_type: "periodic"
+      unit: "gal"
+      notes: "January bill"
+    - timestamp: "2025-02-28T23:59:59"
+      value: 198.7
+      reading_type: "periodic"
+      unit: "gal"
+      notes: "February bill"
+```
 
-### Service Not Found
-- Ensure the integration is properly installed and loaded
-- Check the Home Assistant logs for any error messages
-- Restart Home Assistant if needed
+### Update an Existing Reading
 
-### Entity Not Updating
-- Verify the service call parameters are correct
-- Check that the entity ID matches your sensor
-- Ensure the integration is not disabled
+```yaml
+# Correct a previous reading
+service: metermate.update_reading
+target:
+  entity_id: sensor.electricity_meter
+data:
+  reading_id: "abc123-def456-ghi789"  # From add_reading response
+  value: 15434.7  # Corrected value
+  notes: "Corrected monthly meter reading"
+```
 
-### Energy Dashboard Not Showing Data
-- Confirm your sensor has the correct `device_class` and `state_class`
-- Verify the `unit_of_measurement` is appropriate for the Energy Dashboard
-- Check that statistics are being recorded (Developer Tools > Statistics)
+### Delete an Incorrect Reading
 
-## Contributing
+```yaml
+# Remove an incorrect reading
+service: metermate.delete_reading
+target:
+  entity_id: sensor.electricity_meter
+data:
+  reading_id: "abc123-def456-ghi789"
+```
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+### Query Your Data
 
-## License
+```yaml
+# Get readings for a specific period
+service: metermate.get_readings
+target:
+  entity_id: sensor.electricity_meter
+data:
+  start_date: "2025-01-01T00:00:00"
+  end_date: "2025-06-30T23:59:59"
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Automation Examples
 
-## Support
+```yaml
+# Remind yourself to take monthly readings
+automation:
+  - alias: "Monthly Meter Reading Reminder"
+    trigger:
+      platform: time
+      at: "09:00:00"
+    condition:
+      condition: template
+      value_template: "{{ now().day == 1 }}"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "📊 Meter Reading Due"
+          message: "Time for your monthly meter reading!"
 
-- [Issues](https://github.com/Amoenus/metermate/issues)
-- [Discussions](https://github.com/Amoenus/metermate/discussions)
-- [Home Assistant Community Forum](https://community.home-assistant.io/)
-
----
-
-[commits-shield]: https://img.shields.io/github/commit-activity/y/Amoenus/metermate.svg?style=for-the-badge
-[commits]: https://github.com/Amoenus/metermate/commits/main
-[discord]: https://discord.gg/Qa5fW2R
-[discord-shield]: https://img.shields.io/discord/330944238910963714.svg?style=for-the-badge
-[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
-[forum]: https://community.home-assistant.io/
-[hacs]: https://github.com/hacs/integration
-[hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
-[license-shield]: https://img.shields.io/github/license/Amoenus/metermate.svg?style=for-the-badge
-[maintenance-shield]: https://img.shields.io/badge/maintainer-Amoenus-blue.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/Amoenus/metermate.svg?style=for-the-badge
-[releases]: https://github.com/Amoenus/metermate/releases
-[user_profile]: https://github.com/Amoenus
+# Script for quick meter reading entry
+script:
+  add_meter_reading:
+    alias: "Add Meter Reading"
+    fields:
+      meter_value:
+        description: "Current meter reading"
+        example: "15432.5"
+    sequence:
+      - service: metermate.add_reading
+        target:
+          entity_id: sensor.electricity_meter
+        data:
+          value: "{{ meter_value }}"
+          reading_type: "cumulative"
+          unit: "kWh"
+```

@@ -1,57 +1,182 @@
+# MeterMate Services
+# Full CRUD interface for manual utility data management
+
 add_reading:
   name: Add Reading
-  description: Add a new meter reading to a MeterMate sensor.
+  description: Add a new utility meter reading (cumulative meter reading or periodic consumption data)
   fields:
     entity_id:
-      name: Entity
-      description: The MeterMate sensor entity to add the reading to.
+      name: Entity ID
+      description: The meter sensor entity to add the reading to
       required: true
-      example: sensor.grid_electricity
       selector:
         entity:
-          domain: sensor
           integration: metermate
     value:
       name: Reading Value
-      description: The meter reading value.
+      description: The meter reading value or consumption amount
       required: true
-      example: 15650
       selector:
         number:
           min: 0
           step: 0.001
           mode: box
-    mode:
-      name: Reading Mode
-      description: How to interpret the reading value.
+    timestamp:
+      name: Reading Timestamp
+      description: When the reading was taken (defaults to now)
+      required: false
+      selector:
+        datetime:
+    reading_type:
+      name: Reading Type
+      description: Type of reading - cumulative (meter reading) or periodic (consumption amount)
       required: false
       default: cumulative
-      example: cumulative
       selector:
         select:
           options:
-            - value: cumulative
-              label: Cumulative (total meter reading)
-            - value: periodic
-              label: Periodic (consumption for a period)
-    timestamp:
-      name: Timestamp
-      description: When the reading was taken (for cumulative mode only).
+            - cumulative
+            - periodic
+    unit:
+      name: Unit of Measurement
+      description: Unit for the reading (kWh, m³, gal, etc.)
       required: false
-      example: "2025-01-15 10:30:00"
+      default: kWh
+      selector:
+        text:
+    notes:
+      name: Notes
+      description: Optional notes about this reading
+      required: false
+      selector:
+        text:
+          multiline: true
+
+update_reading:
+  name: Update Reading
+  description: Update an existing meter reading
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    reading_id:
+      name: Reading ID
+      description: The ID of the reading to update
+      required: true
+      selector:
+        text:
+    value:
+      name: Reading Value
+      description: The updated meter reading value
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.001
+          mode: box
+    timestamp:
+      name: Reading Timestamp
+      description: When the reading was taken
+      required: false
       selector:
         datetime:
+    reading_type:
+      name: Reading Type
+      description: Type of reading
+      required: false
+      default: cumulative
+      selector:
+        select:
+          options:
+            - cumulative
+            - periodic
+    unit:
+      name: Unit of Measurement
+      description: Unit for the reading
+      required: false
+      default: kWh
+      selector:
+        text:
+    notes:
+      name: Notes
+      description: Optional notes about this reading
+      required: false
+      selector:
+        text:
+          multiline: true
+
+delete_reading:
+  name: Delete Reading
+  description: Delete a meter reading
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    reading_id:
+      name: Reading ID
+      description: The ID of the reading to delete
+      required: true
+      selector:
+        text:
+
+get_readings:
+  name: Get Readings
+  description: Retrieve meter readings for a specific time period
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity
+      required: true
+      selector:
+        entity:
+          integration: metermate
     start_date:
       name: Start Date
-      description: Start date for the consumption period (for periodic mode only).
+      description: Start date for the query period
       required: false
-      example: "2025-01-01"
       selector:
-        date:
+        datetime:
     end_date:
       name: End Date
-      description: End date for the consumption period (for periodic mode only).
+      description: End date for the query period
       required: false
-      example: "2025-01-31"
       selector:
-        date:
+        datetime:
+
+bulk_import:
+  name: Bulk Import
+  description: Import multiple meter readings at once
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    readings:
+      name: Readings Data
+      description: List of readings to import (YAML list format)
+      required: true
+      selector:
+        object:
+
+recalculate_statistics:
+  name: Recalculate Statistics
+  description: Recalculate and update Home Assistant statistics for a meter
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity to recalculate statistics for
+      required: true
+      selector:
+        entity:
+          integration: metermate
