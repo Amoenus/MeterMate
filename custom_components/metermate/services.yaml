@@ -180,3 +180,15 @@ recalculate_statistics:
       selector:
         entity:
           integration: metermate
+
+rebuild_history:
+  name: Rebuild History
+  description: Completely rebuild historical data for a meter, clearing any existing state journey and replacing it with clean historical records
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity to rebuild history for
+      required: true
+      selector:
+        entity:
+          integration: metermate

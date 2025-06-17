@@ -27,6 +27,7 @@ SERVICE_DELETE_READING = "delete_reading"
 SERVICE_GET_READINGS = "get_readings"
 SERVICE_BULK_IMPORT = "bulk_import"
 SERVICE_RECALCULATE_STATISTICS = "recalculate_statistics"
+SERVICE_REBUILD_HISTORY = "rebuild_history"
 
 # Service schemas
 SERVICE_ADD_READING_SCHEMA = vol.Schema(
@@ -99,6 +100,12 @@ SERVICE_RECALCULATE_STATISTICS_SCHEMA = vol.Schema(
     }
 )
 
+SERVICE_REBUILD_HISTORY_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+    }
+)
+
 
 class MeterMateServices:
     """Service handler for MeterMate integration."""
@@ -161,6 +168,14 @@ class MeterMateServices:
             schema=SERVICE_RECALCULATE_STATISTICS_SCHEMA,
         )
 
+        # Register rebuild_history service
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_REBUILD_HISTORY,
+            self._handle_rebuild_history,
+            schema=SERVICE_REBUILD_HISTORY_SCHEMA,
+        )
+
         _LOGGER.info("MeterMate services registered successfully")
 
     async def async_unregister_services(self) -> None:
@@ -172,6 +187,7 @@ class MeterMateServices:
             SERVICE_GET_READINGS,
             SERVICE_BULK_IMPORT,
             SERVICE_RECALCULATE_STATISTICS,
+            SERVICE_REBUILD_HISTORY,
         ]
 
         for service in services_to_remove:
@@ -418,6 +434,25 @@ class MeterMateServices:
         else:
             _LOGGER.error(
                 "Failed to recalculate statistics for %s: %s",
+                entity_id,
+                result.message,
+            )
+
+    async def _handle_rebuild_history(self, call: ServiceCall) -> None:
+        """Handle rebuild_history service call."""
+        entity_id = call.data["entity_id"]
+
+        # Rebuild history
+        result = await self.data_manager.rebuild_history(entity_id)
+
+        if result.success:
+            _LOGGER.info(
+                "Successfully rebuilt history for %s",
+                entity_id,
+            )
+        else:
+            _LOGGER.error(
+                "Failed to rebuild history for %s: %s",
                 entity_id,
                 result.message,
             )

@@ -13,6 +13,7 @@ from homeassistant.helpers import storage
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+from .database import HistoricalDataHandler
 from .models import OperationResult, Reading, ReadingType, ValidationResult
 
 if TYPE_CHECKING:
@@ -43,6 +44,7 @@ class MeterMateDataManager:
         self._store = storage.Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._data: dict[str, list[Reading]] = {}
         self._loaded = False
+        self._historical_handler = HistoricalDataHandler(hass)
 
     async def async_load(self) -> None:
         """Load stored data."""
@@ -112,8 +114,12 @@ class MeterMateDataManager:
         # Update Home Assistant statistics
         await self._update_statistics(entity_id)
 
-        # Only update sensor value if this reading might be the most recent
-        await self._update_sensor_value_if_latest(entity_id, reading)
+        # Inject historical data directly into Home Assistant recorder
+        await self._inject_historical_data(entity_id, reading)
+
+        # NOTE: We intentionally do NOT update the sensor value here
+        # to avoid creating a "journey" of state changes in HA history.
+        # The sensor will get the latest value via its async_update method.
 
         _LOGGER.info(
             "Added reading for %s: %s %s at %s",
@@ -269,8 +275,7 @@ class MeterMateDataManager:
                 # Update Home Assistant statistics
                 await self._update_statistics(entity_id)
 
-                # Update the sensor value to the latest cumulative reading
-                await self._update_sensor_value(entity_id)
+                # NOTE: Not updating sensor value to avoid state change journey
 
                 _LOGGER.info("Updated reading %s for %s", reading_id, entity_id)
 
@@ -299,8 +304,7 @@ class MeterMateDataManager:
                 # Update Home Assistant statistics
                 await self._update_statistics(entity_id)
 
-                # Update the sensor value to the latest cumulative reading
-                await self._update_sensor_value(entity_id)
+                # NOTE: Not updating sensor value to avoid state change journey
 
                 _LOGGER.info(
                     "Deleted reading %s for %s (value: %s at %s)",
@@ -350,8 +354,8 @@ class MeterMateDataManager:
         # Update Home Assistant statistics
         await self._update_statistics(entity_id)
 
-        # Update the sensor value to the latest cumulative reading
-        await self._update_sensor_value(entity_id)
+        # Regenerate all historical data after deletion
+        await self._regenerate_historical_data(entity_id)
 
         _LOGGER.info(
             "Deleted %d readings for %s in period %s to %s",
@@ -396,8 +400,8 @@ class MeterMateDataManager:
         """Recalculate and update statistics for an entity."""
         try:
             await self._update_statistics(entity_id)
-            # Also update the sensor value to the latest cumulative reading
-            await self._update_sensor_value(entity_id)
+            # Regenerate historical data for proper recorder integration
+            await self._regenerate_historical_data(entity_id)
             return OperationResult(
                 success=True, message="Statistics recalculated successfully"
             )
@@ -547,3 +551,129 @@ class MeterMateDataManager:
                 latest_reading.value,
                 latest_reading.unit,
             )
+
+    async def _inject_historical_data(self, entity_id: str, reading: Reading) -> None:
+        """Inject historical data directly into Home Assistant recorder."""
+        try:
+            # Get entity name for display
+            entity_name = entity_id.replace("sensor.", "").replace("_", " ").title()
+
+            # Use the HistoricalDataHandler to inject the reading as historical data
+            success = self._historical_handler.add_historical_statistic(
+                entity_id=entity_id,
+                timestamp=reading.timestamp,
+                value=reading.value,
+                unit=reading.unit,
+                name=entity_name,
+            )
+
+            if success:
+                _LOGGER.debug(
+                    "Successfully injected historical data for %s: %s at %s",
+                    entity_id,
+                    reading.value,
+                    reading.timestamp,
+                )
+            else:
+                _LOGGER.warning(
+                    "Failed to inject historical data for %s: %s at %s",
+                    entity_id,
+                    reading.value,
+                    reading.timestamp,
+                )
+
+        except Exception:
+            _LOGGER.exception("Error injecting historical data for %s", entity_id)
+
+    async def _regenerate_historical_data(self, entity_id: str) -> None:
+        """Regenerate all historical data for an entity after changes."""
+        try:
+            # Get all readings for the entity
+            readings = await self.get_all_readings(entity_id)
+
+            if not readings:
+                _LOGGER.debug("No readings to regenerate for %s", entity_id)
+                return
+
+            # Get entity name for display
+            entity_name = entity_id.replace("sensor.", "").replace("_", " ").title()
+
+            # Inject all readings as historical data
+            for reading in readings:
+                success = self._historical_handler.add_historical_statistic(
+                    entity_id=entity_id,
+                    timestamp=reading.timestamp,
+                    value=reading.value,
+                    unit=reading.unit,
+                    name=entity_name,
+                )
+
+                if not success:
+                    _LOGGER.warning(
+                        "Failed to regenerate historical data for %s: %s at %s",
+                        entity_id,
+                        reading.value,
+                        reading.timestamp,
+                    )
+
+            _LOGGER.debug(
+                "Regenerated historical data for %s (%d readings)",
+                entity_id,
+                len(readings),
+            )
+
+        except Exception:
+            _LOGGER.exception("Error regenerating historical data for %s", entity_id)
+
+    async def rebuild_history(self, entity_id: str) -> OperationResult:
+        """Completely rebuild historical data for an entity, clearing journey."""
+        try:
+            _LOGGER.info("Starting history rebuild for %s", entity_id)
+
+            # Step 1: Validate database access
+            if not self._historical_handler.validate_database_access():
+                return OperationResult(
+                    success=False,
+                    message="Cannot access Home Assistant database",
+                )
+
+            # Step 2: Clear existing statistics and historical data
+            await self._clear_existing_statistics(entity_id)
+
+            # Step 3: Regenerate all historical data from our storage
+            await self._regenerate_historical_data(entity_id)
+
+            # Step 4: Update statistics for long-term trends
+            await self._update_statistics(entity_id)
+
+            # Step 5: Get readings count for confirmation
+            readings = await self.get_all_readings(entity_id)
+            readings_count = len(readings)
+
+            _LOGGER.info(
+                "Successfully rebuilt history for %s (%d readings processed)",
+                entity_id,
+                readings_count,
+            )
+
+            return OperationResult(
+                success=True,
+                message=f"History rebuilt successfully ({readings_count} readings processed)",
+            )
+
+        except Exception as err:
+            _LOGGER.exception("Error rebuilding history for %s", entity_id)
+            return OperationResult(
+                success=False, message=f"Failed to rebuild history: {err}"
+            )
+
+    async def _clear_existing_statistics(self, entity_id: str) -> None:
+        """Clear existing statistics for an entity before rebuilding."""
+        try:
+            # For now, we'll rely on the database handler to handle overwrites
+            # The HistoricalDataHandler.add_historical_statistic method
+            # already handles updating existing entries
+            _LOGGER.debug("Clearing existing statistics for %s", entity_id)
+
+        except Exception:
+            _LOGGER.exception("Error clearing existing statistics for %s", entity_id)

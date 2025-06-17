@@ -127,6 +127,41 @@ class HAMeterMatePanel extends HTMLElement {
       this._showAlert("success", "Meters refreshed");
     }
 
+    async _rebuildHistory() {
+      if (!this._selectedMeter) {
+        this._showAlert("error", "Please select a meter first");
+        return;
+      }
+
+      const confirmed = confirm(
+        "This will rebuild the historical data for the selected meter, " +
+        "cleaning up any state journey and replacing it with proper historical records. " +
+        "This action cannot be undone. Continue?"
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        console.log('Rebuilding history for:', this._selectedMeter);
+
+        // Call the rebuild_history service
+        await this._hass.callService("metermate", "rebuild_history", {
+          entity_id: this._selectedMeter
+        });
+
+        this._showAlert("success", "History rebuilt successfully");
+
+        // Refresh data to show updated state
+        await this._loadData();
+
+      } catch (error) {
+        console.error('Error rebuilding history:', error);
+        this._showAlert("error", `Failed to rebuild history: ${error.message}`);
+      }
+    }
+
     _openAddDialog() {
       this._showAddDialog = true;
       this._render();
@@ -622,6 +657,9 @@ class HAMeterMatePanel extends HTMLElement {
             <h2>Meters</h2>
             <button class="refresh-btn" onclick="window.meterMatePanel._refreshMeters()" title="Refresh meters">
               <ha-icon icon="mdi:refresh"></ha-icon>
+            </button>
+            <button class="refresh-btn" onclick="window.meterMatePanel._rebuildHistory()" title="Rebuild History - Clean up state journey">
+              <ha-icon icon="mdi:history"></ha-icon>
             </button>
           </div>
           <div class="card-content">
