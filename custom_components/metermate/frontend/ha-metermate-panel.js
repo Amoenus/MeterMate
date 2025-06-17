@@ -121,6 +121,12 @@ class HAMeterMatePanel extends HTMLElement {
       this._render();
     }
 
+    async _refreshMeters() {
+      console.log('Refreshing meters...');
+      await this._loadData();
+      this._showAlert("success", "Meters refreshed");
+    }
+
     _openAddDialog() {
       this._showAddDialog = true;
       this._render();
@@ -613,6 +619,9 @@ class HAMeterMatePanel extends HTMLElement {
         <div class="card meter-selection">
           <div class="card-header">
             <h2>Meters</h2>
+            <button class="refresh-btn" onclick="window.meterMatePanel._refreshMeters()" title="Refresh meters">
+              <ha-icon icon="mdi:refresh"></ha-icon>
+            </button>
           </div>
           <div class="card-content">
             ${this._loading ? `
@@ -624,6 +633,10 @@ class HAMeterMatePanel extends HTMLElement {
                 <ha-icon icon="mdi:meter-electric-outline"></ha-icon>
                 <p>No meters found</p>
                 <p>Configure meters in your Home Assistant configuration.</p>
+                <button class="refresh-btn" onclick="window.meterMatePanel._refreshMeters()">
+                  <ha-icon icon="mdi:refresh"></ha-icon>
+                  Refresh
+                </button>
               </div>
             ` : `
               <div class="meter-chips">

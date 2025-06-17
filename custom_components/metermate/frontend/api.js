@@ -10,27 +10,62 @@ window.MeterMateAPI = (function() {
     }
 
     // Get all MeterMate sensors
-    getMeters() {
-      if (!this.hass || !this.hass.states) {
-        console.log('No hass or states available');
+    async getMeters() {
+      if (!this.hass) {
+        console.error('No hass available');
         return [];
       }
 
-      console.log('All states:', Object.keys(this.hass.states));
-      const entities = Object.values(this.hass.states).filter(
-        (entity) => entity.entity_id.startsWith("sensor.metermate_") ||
-                   entity.entity_id.includes("manual_meter")
-      );
+      console.log('Getting meters from entity registry...');
 
-      console.log('Filtered entities:', entities.map(e => e.entity_id));
+      try {
+        // Get entity registry to identify MeterMate entities by their platform
+        const entityRegistry = await this.hass.callWS({
+          type: 'config/entity_registry/list'
+        });
 
-      return entities.map((entity) => ({
-        entity_id: entity.entity_id,
-        name: entity.attributes.friendly_name || entity.entity_id,
-        state: entity.state,
-        unit: entity.attributes.unit_of_measurement || "kWh",
-        device_class: entity.attributes.device_class || "energy"
-      }));
+        console.log('Entity registry loaded, total entries:', entityRegistry.length);
+
+        // Find entities that belong to the MeterMate integration
+        const meterMateEntityIds = entityRegistry
+          .filter(entity => {
+            console.log(`Checking entity: ${entity.entity_id}, platform: ${entity.platform}`);
+            return entity.platform === 'metermate';
+          })
+          .map(entity => entity.entity_id);
+
+        console.log('MeterMate entity IDs from registry:', meterMateEntityIds);
+
+        if (meterMateEntityIds.length === 0) {
+          console.warn('No MeterMate entities found in registry');
+          return [];
+        }
+
+        // Get current states for MeterMate entities
+        const meterMateEntities = meterMateEntityIds
+          .map(entityId => {
+            const state = this.hass.states[entityId];
+            if (!state) {
+              console.warn(`No state found for entity: ${entityId}`);
+              return null;
+            }
+            return state;
+          })
+          .filter(entity => entity && entity.entity_id.startsWith("sensor."));
+
+        console.log('Filtered MeterMate entities:', meterMateEntities.map(e => e.entity_id));
+
+        return meterMateEntities.map((entity) => ({
+          entity_id: entity.entity_id,
+          name: entity.attributes.friendly_name || entity.entity_id,
+          state: entity.state,
+          unit: entity.attributes.unit_of_measurement || "kWh",
+          device_class: entity.attributes.device_class || "energy"
+        }));
+      } catch (error) {
+        console.error('Error accessing entity registry:', error);
+        throw error; // Re-throw to let the caller handle it
+      }
     }
 
     // Get all readings (across all meters)
@@ -38,7 +73,7 @@ window.MeterMateAPI = (function() {
       try {
         console.log('Getting readings...');
         // Get readings from all MeterMate sensors
-        const meters = this.getMeters();
+        const meters = await this.getMeters();
         console.log('Found meters:', meters);
         const allReadings = [];
 
