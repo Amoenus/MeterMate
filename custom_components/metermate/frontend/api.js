@@ -32,16 +32,21 @@ window.MeterMateAPI = (function() {
     // Get all readings (across all meters)
     async getReadings() {
       try {
+        console.log('Getting readings...');
         // Get readings from all MeterMate sensors
         const meters = this.getMeters();
+        console.log('Found meters:', meters);
         const allReadings = [];
 
         for (const meter of meters) {
           try {
+            console.log(`Calling get_readings service for ${meter.entity_id}...`);
             const result = await this.hass.callService("metermate", "get_readings", {
               entity_id: meter.entity_id
             });
-            const readings = result.response?.readings || [];
+            console.log('Service result:', result);
+            const readings = result?.readings || [];
+            console.log('Extracted readings:', readings);
             readings.forEach(reading => {
               reading.meter_id = meter.entity_id; // Add meter reference
             });
@@ -51,6 +56,7 @@ window.MeterMateAPI = (function() {
           }
         }
 
+        console.log('All readings:', allReadings);
         return allReadings;
       } catch (error) {
         console.error("Error loading readings:", error);
@@ -61,10 +67,12 @@ window.MeterMateAPI = (function() {
     // Get readings for a specific meter
     async getMeterReadings(entityId) {
       try {
+        console.log(`Getting readings for meter: ${entityId}`);
         const result = await this.hass.callService("metermate", "get_readings", {
           entity_id: entityId
         });
-        return result.response?.readings || [];
+        console.log('Meter readings result:', result);
+        return result?.readings || [];
       } catch (error) {
         console.error("Error loading readings:", error);
         throw error;

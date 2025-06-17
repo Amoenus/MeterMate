@@ -302,6 +302,9 @@ class MeterMateServices:
         start_date = call.data.get("start_date")
         end_date = call.data.get("end_date")
 
+        _LOGGER.info("GET_READINGS service called for entity: %s", entity_id)
+        _LOGGER.info("Service call data: %s", call.data)
+
         # Ensure dates are timezone-aware
         if start_date is not None:
             start_date = dt_util.as_utc(start_date)
@@ -322,7 +325,7 @@ class MeterMateServices:
         )
 
         # Return the readings data for the frontend
-        return {
+        response = {
             "readings": [
                 {
                     "id": reading.id,
@@ -335,6 +338,9 @@ class MeterMateServices:
                 for reading in readings
             ]
         }
+        
+        _LOGGER.info("Returning response: %s", response)
+        return response
 
     async def _handle_bulk_import(self, call: ServiceCall) -> None:
         """Handle bulk_import service call."""
