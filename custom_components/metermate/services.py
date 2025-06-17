@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
+from homeassistant.core import SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
@@ -14,7 +15,7 @@ from .data_manager import MeterMateDataManager, TimePeriod
 from .models import Reading, ReadingType
 
 if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant, ServiceCall
+    from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,6 +141,7 @@ class MeterMateServices:
             SERVICE_GET_READINGS,
             self._handle_get_readings,
             schema=SERVICE_GET_READINGS_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
         )
 
         # Register bulk_import service
@@ -294,7 +296,7 @@ class MeterMateServices:
                 result.message,
             )
 
-    async def _handle_get_readings(self, call: ServiceCall) -> None:
+    async def _handle_get_readings(self, call: ServiceCall) -> ServiceResponse:
         """Handle get_readings service call."""
         entity_id = call.data["entity_id"]
         start_date = call.data.get("start_date")
@@ -319,8 +321,20 @@ class MeterMateServices:
             entity_id,
         )
 
-        # Note: In a real implementation, you might want to return this data
-        # For now, we just log it
+        # Return the readings data for the frontend
+        return {
+            "readings": [
+                {
+                    "id": reading.id,
+                    "timestamp": reading.timestamp.isoformat(),
+                    "value": reading.value,
+                    "reading_type": reading.reading_type.value,
+                    "unit": reading.unit,
+                    "notes": reading.notes,
+                }
+                for reading in readings
+            ]
+        }
 
     async def _handle_bulk_import(self, call: ServiceCall) -> None:
         """Handle bulk_import service call."""

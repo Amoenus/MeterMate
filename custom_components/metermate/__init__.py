@@ -15,6 +15,7 @@ from homeassistant.const import Platform
 
 from .const import DOMAIN
 from .data_manager import MeterMateDataManager
+from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services, async_unload_services
 
 if TYPE_CHECKING:
@@ -40,8 +41,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:  # noqa:
     # Set up services
     await async_setup_services(hass, data_manager)
 
-    return True
-    await async_setup_services(hass)
+    # Register the custom panel
+    await async_register_panel(hass)
+
     return True
 
 
@@ -64,4 +66,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: MeterMateConfigEntry) -
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         await async_unload_services(hass)
+        async_unregister_panel(hass)
     return unload_ok

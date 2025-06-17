@@ -9,6 +9,6 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Amoenus/metermate/issues",
   "version": "0.1.0",
-  "dependencies": ["recorder"],
+  "dependencies": ["recorder", "frontend"],
   "requirements": []
 }
