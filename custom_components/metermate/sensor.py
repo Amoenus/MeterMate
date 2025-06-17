@@ -235,3 +235,61 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
             _LOGGER.debug("Unregistered entity %s from domain data", self.entity_id)
 
         await super().async_will_remove_from_hass()
+
+    async def async_update(self) -> None:
+        """Update the sensor by fetching the latest data from storage."""
+        try:
+            # Get the data manager
+            if (
+                DOMAIN not in self.hass.data
+                or "data_manager" not in self.hass.data[DOMAIN]
+            ):
+                _LOGGER.warning("Data manager not available for sensor update")
+                return
+
+            data_manager = self.hass.data[DOMAIN]["data_manager"]
+
+            # Get all readings for this entity
+            readings = await data_manager.get_all_readings(self.entity_id)
+
+            if not readings:
+                _LOGGER.debug("No readings found for %s", self.entity_id)
+                return
+
+            # Find the latest cumulative reading
+            cumulative_readings = [
+                r for r in readings if r.reading_type.value == "cumulative"
+            ]
+
+            if not cumulative_readings:
+                _LOGGER.debug("No cumulative readings found for %s", self.entity_id)
+                return
+
+            # Get the most recent reading by timestamp
+            latest_reading = max(cumulative_readings, key=lambda r: r.timestamp)
+
+            # Update the sensor value if it's different
+            if self._attr_native_value != latest_reading.value:
+                old_value = self._attr_native_value
+                self._attr_native_value = latest_reading.value
+
+                # Track last good value
+                if latest_reading.value > 0:
+                    self._last_good_value = latest_reading.value
+
+                _LOGGER.debug(
+                    "Sensor %s updated via async_update: %s -> %s (from reading at %s)",
+                    self.entity_id,
+                    old_value,
+                    latest_reading.value,
+                    latest_reading.timestamp,
+                )
+            else:
+                _LOGGER.debug(
+                    "Sensor %s value unchanged: %s",
+                    self.entity_id,
+                    self._attr_native_value,
+                )
+
+        except Exception as e:
+            _LOGGER.error("Error updating sensor %s: %s", self.entity_id, e)

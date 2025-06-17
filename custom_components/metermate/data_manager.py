@@ -419,8 +419,8 @@ class MeterMateDataManager:
         # Get the sensor configuration
         unit = readings[0].unit if readings else "kWh"
 
-        # Create metadata first - remove sensor. prefix for external statistics
-        statistic_id = entity_id.replace("sensor.", "")
+        # Create metadata first - external statistics need domain:id format
+        statistic_id = f"{DOMAIN}:{entity_id.replace('sensor.', '')}"
         metadata = StatisticMetaData(
             has_mean=False,
             has_sum=True,
