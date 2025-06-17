@@ -141,24 +141,102 @@ CREATE TABLE statistics (
 - **Logging**: Comprehensive logging for troubleshooting and audit trails
 
 9. Technical Approach
-   The integration will be built as a standard Home Assistant custom component.
+   The integration will be built as a standard Home Assistant custom component with a sophisticated data management interface.
 
-Initial Proof of Concept Status:
-We have a working PoC that successfully creates sensors and allows data entry through services. However, the current implementation has a critical limitation: it logs all data at the current timestamp rather than at the correct historical dates. This prevents proper historical tracking in the Energy Dashboard.
+Evolution to Comprehensive Manual Data Entry Platform:
+MeterMate evolves from basic service calls to become a full-featured data source for Home Assistant's Energy Dashboard. The value this integration adds is:
 
-Revised Technical Approach:
-After researching successful implementations (such as the Home-Assistant-Import-Energy-Data project), it's clear that achieving true historical data logging requires direct database manipulation rather than relying on Home Assistant's built-in statistics APIs. The built-in APIs are designed for real-time data ingestion and don't properly handle backdated entries.
+1. **Complete CRUD Interface**: Full Create, Read, Update, Delete capabilities for manual utility readings
+2. **Dedicated Data Source**: Acts as a standalone data source specifically for manual utility bill and meter reading data
+3. **Energy Dashboard Integration**: Seamlessly exposes data to Home Assistant's Energy Dashboard as if it were a smart meter
+4. **User-Friendly Management**: Intuitive interface for managing historical and ongoing utility consumption data
+5. **Data Integrity**: Maintains data consistency and provides validation for all manual entries
 
-Core Requirements for Historical Data:
-1. **Direct Database Access**: We need to directly insert data into Home Assistant's `statistics` and `statistics_short_term` tables with correct timestamps
-2. **Unix Timestamp Conversion**: All timestamps must be converted to Unix epoch format for proper database storage
-3. **Proper Table Structure**: Understanding and respecting Home Assistant's database schema (tested with schema version 50+)
-4. **Metadata Handling**: Ensuring proper `statistics_meta` entries exist for our sensors
-5. **Data Validation**: Ensuring data integrity and handling of duplicate entries
+9.1. Database Architecture with SQLAlchemy
+Home Assistant uses SQLAlchemy 2.0+ as its Object Relational Mapper (ORM). Our implementation will:
+
+- **Leverage Existing Models**: Use Home Assistant's existing SQLAlchemy models for statistics where available
+- **Extend with Custom Models**: Create MeterMate-specific models that integrate seamlessly with Home Assistant's schema
+- **Maintain Compatibility**: Ensure all operations are compatible with Home Assistant's database migrations and schema evolution
+
+Key Benefits of SQLAlchemy Integration:
+- **Type Safety**: Strong typing with modern SQLAlchemy 2.0 features
+- **Database Portability**: Support for SQLite, PostgreSQL, MySQL through SQLAlchemy
+- **Transaction Management**: Proper ACID compliance with rollback capabilities
+- **Migration Support**: Schema versioning and automatic migration handling
+- **Performance**: Optimized queries and connection pooling
+
+9.2. Data Management API Structure
+```python
+class MeterMateDataManager:
+    """Full CRUD data management interface for MeterMate utility readings."""
+    
+    # CREATE operations
+    async def add_reading(self, entity_id: str, reading: Reading) -> OperationResult
+    async def bulk_import(self, entity_id: str, readings: List[Reading]) -> BulkResult
+    
+    # READ operations
+    async def get_reading(self, reading_id: str) -> Reading | None
+    async def get_readings(self, entity_id: str, period: TimePeriod) -> List[Reading]
+    async def get_all_readings(self, entity_id: str) -> List[Reading]
+    
+    # UPDATE operations
+    async def update_reading(self, reading_id: str, reading: Reading) -> OperationResult
+    async def bulk_update(self, updates: List[ReadingUpdate]) -> BulkResult
+    
+    # DELETE operations
+    async def delete_reading(self, reading_id: str) -> OperationResult
+    async def delete_readings(self, entity_id: str, period: TimePeriod) -> OperationResult
+    async def bulk_delete(self, reading_ids: List[str]) -> BulkResult
+    
+    # VALIDATION and UTILITY
+    async def validate_data(self, readings: List[Reading]) -> ValidationResult
+    async def recalculate_statistics(self, entity_id: str) -> OperationResult
+```
+
+9.3. Enhanced Database Models
+```python
+from homeassistant.components.recorder import db_schema
+from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
+
+class MeterMateReading(db_schema.Base):
+    """Model for storing MeterMate readings with full audit trail."""
+    __tablename__ = "metermate_readings"
+    
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(String, nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    value = Column(Float, nullable=False)
+    reading_type = Column(String, nullable=False)  # cumulative, periodic
+    operation_id = Column(String, nullable=False)  # for rollback tracking
+    created_at = Column(DateTime, default=func.now())
+    
+    # Relationship to Home Assistant's statistics
+    statistics = relationship("Statistics", back_populates="metermate_readings")
+```
+
+9.4. Core Requirements for Historical Data (Updated):
+1. **SQLAlchemy ORM Integration**: Use Home Assistant's SQLAlchemy session and models
+2. **Proper Transaction Management**: Ensure ACID compliance with proper rollback capabilities  
+3. **Home Assistant Schema Compatibility**: Respect existing `statistics_meta`, `statistics`, and `statistics_short_term` table structures
+4. **Audit Trail**: Complete tracking of all data operations for troubleshooting and rollback
+5. **Data Validation**: Comprehensive validation before database operations
+6. **Bulk Operations**: Efficient handling of large data imports
+7. **Migration Support**: Forward-compatible database schema design
+
+9.5. Implementation Phases:
+**Phase 1**: Replace direct SQLite operations with SQLAlchemy ORM
+**Phase 2**: Implement advanced data management interface
+**Phase 3**: Add bulk import and export capabilities  
+**Phase 4**: Implement comprehensive audit trail and rollback features
+**Phase 5**: Create management UI components for advanced operations
 
 Database Tables Involved:
-- `statistics_meta`: Contains sensor metadata (statistic_id, unit_of_measurement, source)
-- `statistics`: Long-term statistics data (metadata_id, state, sum, start_ts, created_ts)
-- `statistics_short_term`: Short-term statistics data for recent data
+- `statistics_meta`: Contains sensor metadata (using Home Assistant's existing model)
+- `statistics`: Long-term statistics data (using Home Assistant's existing model)
+- `statistics_short_term`: Short-term statistics data (using Home Assistant's existing model)
+- `metermate_readings`: New audit table for MeterMate-specific operations
+- `metermate_operations`: New table for tracking bulk operations and rollbacks
 
-The integration's sensor will continue to track current state, but historical data will be inserted directly into the statistics tables with the correct timestamps, ensuring full compatibility with the Energy Dashboard's historical views.
+The integration will provide both backward compatibility with the existing service interface and new advanced data management capabilities through a rich API that other integrations can also leverage.
