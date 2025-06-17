@@ -1,16 +1,9 @@
-# Product Design & Requirements Document: MeterMate
+# Product Requirements Document: MeterMate
 
-Author: Amoenus
-Version: 1.0
-Date: June 16, 2025
-Status: Draft
+**Simple Manual Entry Integration for Home Assistant Energy Dashboard**
 
-1. Introduction & Problem Statement
-   Home Assistant's Energy Dashboard is a powerful tool for visualising energy consumption, but it primarily relies on real-time data from smart meters or power-monitoring devices. A significant portion of users do not have access to these devices and instead receive periodic utility bills (e.g., monthly) with total consumption figures, or they take manual readings from older, cumulative meters.
-
-Currently, there is no straightforward, user-friendly way to input this periodic or point-in-time data into Home Assistant to make it compatible with the Energy Dashboard's long-term statistics. Existing workarounds involve complex template sensor configurations, manual database adjustments, or calling developer services, which are non-obvious and intimidating for the average user.
-
-This project aims to solve this problem by providing a simple, dedicated integration for manually adding utility readings.
+## Mission
+Create a straightforward integration that allows users to manually enter data from utility bills or dumb meters and have it appear in Home Assistant's Energy Dashboard - nothing more, nothing less.
 
 2. Goals & Objectives
    The primary goal is to empower any Home Assistant user, regardless of their technical skill, to accurately track historical and ongoing utility consumption using manual data entry.
