@@ -338,7 +338,7 @@ class MeterMateServices:
                 for reading in readings
             ]
         }
-        
+
         _LOGGER.info("Returning response: %s", response)
         return response
 

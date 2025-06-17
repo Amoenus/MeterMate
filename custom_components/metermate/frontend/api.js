@@ -12,13 +12,17 @@ window.MeterMateAPI = (function() {
     // Get all MeterMate sensors
     getMeters() {
       if (!this.hass || !this.hass.states) {
+        console.log('No hass or states available');
         return [];
       }
 
+      console.log('All states:', Object.keys(this.hass.states));
       const entities = Object.values(this.hass.states).filter(
         (entity) => entity.entity_id.startsWith("sensor.metermate_") ||
                    entity.entity_id.includes("manual_meter")
       );
+
+      console.log('Filtered entities:', entities.map(e => e.entity_id));
 
       return entities.map((entity) => ({
         entity_id: entity.entity_id,

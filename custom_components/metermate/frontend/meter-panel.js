@@ -224,6 +224,21 @@ window.MeterMatePanel = (function() {
       const header = ui.UIComponents.createHeader('MeterMate');
       container.appendChild(header);
 
+      // Debug info
+      const debugInfo = document.createElement('div');
+      debugInfo.style.backgroundColor = '#f0f0f0';
+      debugInfo.style.padding = '10px';
+      debugInfo.style.marginBottom = '10px';
+      debugInfo.style.fontFamily = 'monospace';
+      debugInfo.style.fontSize = '12px';
+      debugInfo.innerHTML = `
+        <strong>Main Debug Info:</strong><br>
+        Found Meters: ${this._meters.length}<br>
+        Selected Meter: ${this._selectedMeter}<br>
+        Meters: ${JSON.stringify(this._meters, null, 2)}
+      `;
+      container.appendChild(debugInfo);
+
       if (this._loading) {
         const loader = ui.UIComponents.createLoader();
         container.appendChild(loader);
@@ -403,6 +418,22 @@ window.MeterMatePanel = (function() {
       const title = document.createElement('h3');
       title.textContent = 'Recent Readings';
       container.appendChild(title);
+
+      // Debug information
+      const debugInfo = document.createElement('div');
+      debugInfo.style.backgroundColor = '#f0f0f0';
+      debugInfo.style.padding = '10px';
+      debugInfo.style.marginBottom = '10px';
+      debugInfo.style.fontFamily = 'monospace';
+      debugInfo.style.fontSize = '12px';
+      debugInfo.innerHTML = `
+        <strong>Debug Info:</strong><br>
+        Selected Meter: ${this._selectedMeter}<br>
+        Total Readings: ${this._readings.length}<br>
+        Filtered Readings: ${readings.length}<br>
+        Readings: ${JSON.stringify(this._readings, null, 2)}
+      `;
+      container.appendChild(debugInfo);
 
       if (readings.length === 0) {
         const emptyMsg = document.createElement('p');
