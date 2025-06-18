@@ -54,13 +54,30 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         _LOGGER.debug("Sensor init - unit from config: %s", unit)
         _LOGGER.debug("Sensor init - device_class from config: %s", device_class)
 
+        # Handle device_class - it might be an enum object (from old configs)
+        # or string (from new configs)
+        if device_class is not None:
+            if hasattr(device_class, "value"):
+                # It's an enum object, get the string value
+                device_class_str = device_class.value
+                _LOGGER.debug(
+                    "Converted enum device_class %s to string: %s",
+                    device_class,
+                    device_class_str,
+                )
+            else:
+                # It's already a string
+                device_class_str = device_class
+        else:
+            device_class_str = None
+
         # Set default unit based on device class if not provided
         if not unit:
-            if device_class == "energy":
+            if device_class_str == "energy":
                 unit = "kWh"
-            elif device_class == "gas":
+            elif device_class_str == "gas":
                 unit = "m³"
-            elif device_class == "water":
+            elif device_class_str == "water":
                 unit = "L"
             else:
                 unit = "kWh"  # Default fallback
@@ -72,8 +89,8 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
             unit = "kWh"
 
         self._attr_native_unit_of_measurement = unit
-        if device_class:
-            self._attr_device_class = SensorDeviceClass(device_class)
+        if device_class_str:
+            self._attr_device_class = SensorDeviceClass(device_class_str)
         else:
             self._attr_device_class = None
         self._initial_reading = entry.data.get(CONF_INITIAL_READING, 0)

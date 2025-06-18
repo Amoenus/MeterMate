@@ -32,6 +32,11 @@ class MeterMateFlowHandler(config_entries.ConfigFlow, domain=ATTR_INTEGRATION_NA
         _errors = {}
 
         if user_input is not None:
+            # Convert enum device_class to string for proper serialization
+            device_class = user_input.get(CONF_DEVICE_CLASS)
+            if device_class and hasattr(device_class, "value"):
+                user_input[CONF_DEVICE_CLASS] = device_class.value
+
             # Create unique ID based on the name
             unique_id = user_input[CONF_NAME].lower().replace(" ", "_")
             await self.async_set_unique_id(unique_id)
