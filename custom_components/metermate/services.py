@@ -103,6 +103,7 @@ SERVICE_RECALCULATE_STATISTICS_SCHEMA = vol.Schema(
 SERVICE_REBUILD_HISTORY_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.entity_id,
+        vol.Optional("complete_wipe", default=True): cv.boolean,
     }
 )
 
@@ -441,14 +442,24 @@ class MeterMateServices:
     async def _handle_rebuild_history(self, call: ServiceCall) -> None:
         """Handle rebuild_history service call."""
         entity_id = call.data["entity_id"]
+        complete_wipe = call.data.get("complete_wipe", True)
 
-        # Rebuild history
-        result = await self.data_manager.rebuild_history(entity_id)
+        _LOGGER.info(
+            "Starting %s rebuild for %s",
+            "complete" if complete_wipe else "incremental",
+            entity_id,
+        )
+
+        # Rebuild history with specified mode
+        result = await self.data_manager.rebuild_history(
+            entity_id, complete_wipe=complete_wipe
+        )
 
         if result.success:
             _LOGGER.info(
-                "Successfully rebuilt history for %s",
+                "Successfully rebuilt history for %s: %s",
                 entity_id,
+                result.message,
             )
         else:
             _LOGGER.error(

@@ -183,7 +183,7 @@ recalculate_statistics:
 
 rebuild_history:
   name: Rebuild History
-  description: Completely rebuild historical data for a meter, clearing any existing state journey and replacing it with clean historical records
+  description: Completely rebuild historical data for a meter, with option to wipe all existing data first
   fields:
     entity_id:
       name: Entity ID
@@ -192,3 +192,10 @@ rebuild_history:
       selector:
         entity:
           integration: metermate
+    complete_wipe:
+      name: Complete Wipe
+      description: If enabled, completely wipes all existing data (states, statistics) before rebuilding. If disabled, performs incremental cleanup.
+      required: false
+      default: true
+      selector:
+        boolean:
