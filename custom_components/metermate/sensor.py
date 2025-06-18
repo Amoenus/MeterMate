@@ -256,23 +256,13 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
                 _LOGGER.debug("No readings found for %s", self.entity_id)
                 return
 
-            # Find the latest cumulative reading
-            cumulative_readings = [
-                r for r in readings if r.reading_type.value == "cumulative"
-            ]
-
-            if not cumulative_readings:
-                _LOGGER.debug("No cumulative readings found for %s", self.entity_id)
-                return
-
-            # Get the most recent reading by timestamp
-            latest_reading = max(cumulative_readings, key=lambda r: r.timestamp)
+            # Get the most recent reading by timestamp (all readings are now cumulative)
+            latest_reading = max(readings, key=lambda r: r.timestamp)
 
             _LOGGER.debug(
-                "async_update for %s: found %d total, %d cumulative. Latest: %s at %s",
+                "async_update for %s: found %d readings. Latest: %s at %s",
                 self.entity_id,
                 len(readings),
-                len(cumulative_readings),
                 latest_reading.value,
                 latest_reading.timestamp,
             )

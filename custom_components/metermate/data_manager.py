@@ -14,7 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .database import HistoricalDataHandler
-from .models import OperationResult, Reading, ReadingType, ValidationResult
+from .models import OperationResult, Reading, ValidationResult
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -387,10 +387,6 @@ class MeterMateDataManager:
         if reading.timestamp is None:
             errors.append("Timestamp is required")
 
-        # Check value is non-negative for cumulative readings
-        if reading.reading_type == ReadingType.CUMULATIVE and reading.value < 0:
-            errors.append("Cumulative readings must be non-negative")
-
         # Check timestamp is not in the future
         # Ensure we're comparing timezone-aware datetimes
         timestamp_utc = dt_util.as_utc(reading.timestamp)
@@ -443,10 +439,8 @@ class MeterMateDataManager:
         running_total = 0.0
 
         for reading in readings:
-            if reading.reading_type == ReadingType.CUMULATIVE:
-                running_total = reading.value
-            else:  # PERIODIC
-                running_total += reading.value
+            # All readings are now cumulative meter readings
+            running_total = reading.value
 
             # Round timestamp to the top of the hour for statistics
             hour_timestamp = reading.timestamp.replace(
@@ -485,21 +479,17 @@ class MeterMateDataManager:
     async def _update_sensor_value_if_latest(
         self, entity_id: str, new_reading: Reading
     ) -> None:
-        """Update sensor value only if new reading is most recent cumulative reading."""
-        if new_reading.reading_type != ReadingType.CUMULATIVE:
-            return  # Only cumulative readings affect the sensor value
+        """Update sensor value only if new reading is most recent reading."""
+        # All readings are now meter readings, so we can update with the latest one
 
-        # Get all cumulative readings to check if this is the latest
+        # Get all readings to check if this is the latest
         readings = await self.get_all_readings(entity_id)
-        cumulative_readings = [
-            r for r in readings if r.reading_type == ReadingType.CUMULATIVE
-        ]
 
-        if not cumulative_readings:
+        if not readings:
             return
 
         # Find the most recent reading by timestamp
-        latest_reading = max(cumulative_readings, key=lambda r: r.timestamp)
+        latest_reading = max(readings, key=lambda r: r.timestamp)
 
         # Only update if the new reading is the latest one
         if latest_reading.id == new_reading.id:
@@ -526,20 +516,14 @@ class MeterMateDataManager:
             )
 
     async def _update_sensor_value(self, entity_id: str) -> None:
-        """Update sensor value to latest cumulative reading (used for recalculation)."""
-        # Get the latest cumulative reading
+        """Update sensor value to latest reading (used for recalculation)."""
+        # Get the latest reading
         readings = await self.get_all_readings(entity_id)
         if not readings:
             return
 
-        # Find the latest cumulative reading
-        cumulative_readings = [
-            r for r in readings if r.reading_type == ReadingType.CUMULATIVE
-        ]
-        if not cumulative_readings:
-            return
-
-        latest_reading = max(cumulative_readings, key=lambda r: r.timestamp)
+        # Find the latest reading
+        latest_reading = max(readings, key=lambda r: r.timestamp)
 
         # Get the sensor entity and update its value
         if (
@@ -661,10 +645,8 @@ class MeterMateDataManager:
                     )
 
                 # Calculate cumulative value for state
-                if reading.reading_type == ReadingType.CUMULATIVE:
-                    running_total = reading.value
-                else:  # PERIODIC
-                    running_total += reading.value
+                # All readings are now meter readings (cumulative)
+                running_total = reading.value
 
                 # Determine if we should add this as a state
                 should_add_state = False
@@ -810,3 +792,257 @@ class MeterMateDataManager:
 
         except Exception:
             _LOGGER.exception("Error clearing existing statistics for %s", entity_id)
+
+    # New methods for enhanced reading management
+
+    async def add_meter_reading(
+        self,
+        entity_id: str,
+        timestamp: datetime,
+        meter_reading: float,
+        notes: str = "",
+        unit: str = "kWh",
+    ) -> OperationResult:
+        """Add a new meter reading and calculate consumption from previous reading.
+
+        Args:
+            entity_id: The entity ID for the meter
+            timestamp: When the reading was taken
+            meter_reading: The actual meter reading value
+            notes: Optional notes for the reading
+            unit: Unit of measurement
+
+        Returns:
+            OperationResult with success status and calculated consumption
+        """
+        await self.async_load()
+
+        try:
+            # Get previous reading to calculate consumption
+            readings = await self.get_readings(entity_id)
+            previous_reading = None
+            consumption = None
+            period_start = None
+
+            if readings:
+                # Find the closest previous reading
+                previous_readings = [r for r in readings if r.timestamp < timestamp]
+                if previous_readings:
+                    previous_reading = max(previous_readings, key=lambda x: x.timestamp)
+                    consumption = meter_reading - previous_reading.value
+                    period_start = previous_reading.timestamp
+
+            # Create the new reading
+            reading = Reading(
+                timestamp=timestamp,
+                value=meter_reading,
+                unit=unit,
+                notes=notes,
+                period_start=period_start,
+                period_end=timestamp,
+                consumption=consumption,
+            )
+
+            # Validate the reading
+            validation = await self.validate_reading(reading)
+            if not validation.is_valid:
+                return OperationResult(
+                    success=False,
+                    message=f"Invalid reading: {', '.join(validation.errors)}",
+                )
+
+            # Add the reading
+            result = await self.add_reading(entity_id, reading)
+
+            if result.success:
+                # Update any subsequent readings that may be affected
+                await self._recalculate_subsequent_readings(entity_id, timestamp)
+
+                return OperationResult(
+                    success=True,
+                    message=f"Added meter reading {meter_reading} {unit}"
+                    + (f" (consumption: {consumption} {unit})" if consumption else ""),
+                    data={
+                        "meter_reading": meter_reading,
+                        "consumption": consumption,
+                        "period_start": period_start.isoformat()
+                        if period_start
+                        else None,
+                        "period_end": timestamp.isoformat(),
+                    },
+                )
+
+            return result
+
+        except Exception as e:
+            _LOGGER.exception("Error adding meter reading")
+            error_msg = f"Failed to add meter reading: {e!s}"
+            return OperationResult(success=False, message=error_msg)
+
+    async def add_consumption_period(
+        self,
+        entity_id: str,
+        period_start: datetime,
+        period_end: datetime,
+        consumption: float,
+        notes: str = "",
+        unit: str = "kWh",
+    ) -> OperationResult:
+        """Add consumption for a period and calculate the ending meter reading.
+
+        Args:
+            entity_id: The entity ID for the meter
+            period_start: Start of the consumption period
+            period_end: End of the consumption period
+            consumption: Amount consumed during the period
+            notes: Optional notes for the reading
+            unit: Unit of measurement
+
+        Returns:
+            OperationResult with success status and calculated meter reading
+        """
+        await self.async_load()
+
+        try:
+            # Get readings to find the starting meter reading
+            readings = await self.get_readings(entity_id)
+            starting_reading = None
+
+            if readings:
+                # Find reading at or before period start
+                before_readings = [r for r in readings if r.timestamp <= period_start]
+                if before_readings:
+                    starting_reading = max(before_readings, key=lambda x: x.timestamp)
+                else:
+                    # If no reading before period start, get the earliest reading
+                    earliest = min(readings, key=lambda x: x.timestamp)
+                    if earliest.timestamp > period_start:
+                        return OperationResult(
+                            success=False,
+                            message=(
+                                "Cannot add consumption period before "
+                                "first meter reading"
+                            ),
+                        )
+
+            if starting_reading is None:
+                return OperationResult(
+                    success=False,
+                    message=(
+                        "No starting meter reading found to calculate ending reading"
+                    ),
+                )
+
+            # Calculate ending meter reading
+            ending_meter_reading = starting_reading.value + consumption
+
+            # Create the new reading for the end of the period
+            reading = Reading(
+                timestamp=period_end,
+                value=ending_meter_reading,
+                unit=unit,
+                notes=notes,
+                period_start=period_start,
+                period_end=period_end,
+                consumption=consumption,
+            )
+
+            # Validate the reading
+            validation = await self.validate_reading(reading)
+            if not validation.is_valid:
+                return OperationResult(
+                    success=False,
+                    message=f"Invalid reading: {', '.join(validation.errors)}",
+                )
+
+            # Add the reading
+            result = await self.add_reading(entity_id, reading)
+
+            if result.success:
+                # Update any subsequent readings that may be affected
+                await self._recalculate_subsequent_readings(entity_id, period_end)
+
+                return OperationResult(
+                    success=True,
+                    message=(
+                        f"Added consumption {consumption} {unit} for period "
+                        f"(ending meter reading: {ending_meter_reading} {unit})"
+                    ),
+                    data={
+                        "consumption": consumption,
+                        "meter_reading": ending_meter_reading,
+                        "period_start": period_start.isoformat(),
+                        "period_end": period_end.isoformat(),
+                    },
+                )
+
+            return result
+
+        except Exception as e:
+            _LOGGER.exception("Error adding consumption period")
+            error_msg = f"Failed to add consumption period: {e!s}"
+            return OperationResult(success=False, message=error_msg)
+
+    async def _recalculate_subsequent_readings(
+        self, entity_id: str, changed_timestamp: datetime
+    ) -> None:
+        """
+        Recalculate readings that come after a changed reading.
+
+        This ensures that when we insert a reading in the past or modify an
+        existing one, all subsequent readings are updated with correct
+        consumption calculations.
+        """
+        try:
+            readings = await self.get_readings(entity_id)
+
+            # Get readings that come after the changed timestamp
+            subsequent_readings = [
+                r for r in readings if r.timestamp > changed_timestamp
+            ]
+
+            if not subsequent_readings:
+                return
+
+            # Sort by timestamp
+            subsequent_readings.sort(key=lambda x: x.timestamp)
+
+            # Find the reading at or before the changed timestamp to use as base
+            base_readings = [r for r in readings if r.timestamp <= changed_timestamp]
+            if not base_readings:
+                return
+
+            base_reading = max(base_readings, key=lambda x: x.timestamp)
+
+            # Recalculate each subsequent reading
+            previous_reading = base_reading
+            for reading in subsequent_readings:
+                if previous_reading:
+                    # Update consumption calculation
+                    reading.consumption = reading.value - previous_reading.value
+                    reading.period_start = previous_reading.timestamp
+                    reading.period_end = reading.timestamp
+
+                    # Update the reading in storage
+                    await self._update_reading_in_storage(entity_id, reading)
+
+                previous_reading = reading
+
+        except Exception:
+            _LOGGER.exception("Error recalculating subsequent readings")
+
+    async def _update_reading_in_storage(
+        self, entity_id: str, reading: Reading
+    ) -> None:
+        """Update a specific reading in storage."""
+        if entity_id not in self._data:
+            return
+
+        # Find and update the reading
+        for i, stored_reading in enumerate(self._data[entity_id]):
+            if stored_reading.id == reading.id:
+                self._data[entity_id][i] = reading
+                break
+
+        # Save to storage
+        await self.async_save()

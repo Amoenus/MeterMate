@@ -250,6 +250,65 @@
   color: var(--primary-text-color, #212121);
 }
 
+/* Enhanced form styles for meter reading and consumption entry */
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.radio-label {
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  padding: 12px;
+  border: 1px solid var(--divider-color, #e0e0e0);
+  border-radius: 6px;
+  background: var(--card-background-color, white);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.radio-label:hover {
+  border-color: var(--primary-color, #03a9f4);
+  background: var(--secondary-background-color, #f5f5f5);
+}
+
+.radio-label input[type="radio"] {
+  margin: 0 8px 0 0;
+  align-self: flex-start;
+}
+
+.radio-label input[type="radio"]:checked + span {
+  color: var(--primary-color, #03a9f4);
+  font-weight: 500;
+}
+
+.radio-label span {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.radio-label small {
+  color: var(--secondary-text-color, #757575);
+  font-size: 12px;
+  margin-left: 20px;
+}
+
+.form-field-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-field small {
+  display: block;
+  color: var(--secondary-text-color, #757575);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .stats-grid {
@@ -268,5 +327,15 @@
 
   .meter-selector select {
     min-width: 100%;
+  }
+
+  .form-field-group {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .radio-label small {
+    margin-left: 0;
+    margin-top: 4px;
   }
 }

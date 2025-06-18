@@ -165,7 +165,6 @@ window.MeterMateAPI = (function() {
           entity_id: entityId,
           value: parseFloat(value),
           timestamp: timestamp || undefined,
-          reading_type: "cumulative",
           notes: notes || undefined
         });
       } catch (error) {
@@ -182,7 +181,6 @@ window.MeterMateAPI = (function() {
           reading_id: readingId,
           value: parseFloat(value),
           timestamp: timestamp || undefined,
-          reading_type: "cumulative",
           notes: notes || undefined
         });
       } catch (error) {
@@ -200,6 +198,18 @@ window.MeterMateAPI = (function() {
         });
       } catch (error) {
         console.error("Error deleting reading:", error);
+        throw error;
+      }
+    }
+
+    // Generic service call method
+    async callService(serviceName, serviceData) {
+      try {
+        console.log(`Calling MeterMate service: ${serviceName}`, serviceData);
+        await this.hass.callService("metermate", serviceName, serviceData);
+        console.log(`Service ${serviceName} completed successfully`);
+      } catch (error) {
+        console.error(`Error calling service ${serviceName}:`, error);
         throw error;
       }
     }

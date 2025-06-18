@@ -187,6 +187,7 @@ class HAMeterMatePanel extends HTMLElement {
     async _handleAddReading(event) {
       event.preventDefault();
       const formData = new FormData(event.target);
+      const entryType = formData.get("entryType");
 
       if (!this._selectedMeter) {
         this._showAlert("error", "Please select a meter first");
@@ -194,19 +195,88 @@ class HAMeterMatePanel extends HTMLElement {
       }
 
       try {
-        await this._api.addReading(
-          this._selectedMeter,
-          parseFloat(formData.get("value")),
-          formData.get("datetime"),
-          formData.get("notes") || ""
-        );
+        if (entryType === "meter_reading") {
+          // Handle meter reading entry
+          const meterReading = parseFloat(formData.get("meter_reading"));
+          const timestamp = formData.get("reading_datetime");
+          const notes = formData.get("notes") || "";
 
-        this._showAlert("success", "Reading added successfully");
+          if (!meterReading || meterReading < 0) {
+            this._showAlert("error", "Please enter a valid meter reading");
+            return;
+          }
+
+          await this._api.callService("add_meter_reading", {
+            entity_id: this._selectedMeter,
+            meter_reading: meterReading,
+            timestamp: new Date(timestamp).toISOString(),
+            notes: notes
+          });
+
+          this._showAlert("success", "Meter reading added successfully");
+
+        } else if (entryType === "consumption") {
+          // Handle consumption period entry
+          const consumption = parseFloat(formData.get("consumption"));
+          const periodStart = formData.get("period_start");
+          const periodEnd = formData.get("period_end");
+          const notes = formData.get("notes") || "";
+
+          if (!consumption || consumption < 0) {
+            this._showAlert("error", "Please enter a valid consumption amount");
+            return;
+          }
+
+          if (!periodStart || !periodEnd) {
+            this._showAlert("error", "Please specify both period start and end dates");
+            return;
+          }
+
+          if (new Date(periodStart) >= new Date(periodEnd)) {
+            this._showAlert("error", "Period start must be before period end");
+            return;
+          }
+
+          await this._api.callService("add_consumption_period", {
+            entity_id: this._selectedMeter,
+            consumption: consumption,
+            period_start: new Date(periodStart).toISOString(),
+            period_end: new Date(periodEnd).toISOString(),
+            notes: notes
+          });
+
+          this._showAlert("success", "Consumption period added successfully");
+        }
+
         this._closeAddDialog();
         await this._loadData();
       } catch (error) {
         console.error("MeterMate: Error adding reading:", error);
-        this._showAlert("error", "Failed to add reading");
+        this._showAlert("error", `Failed to add reading: ${error.message || error}`);
+      }
+    }
+
+    _toggleEntryType() {
+      const meterReadingFields = this.shadowRoot.getElementById("meter-reading-fields");
+      const consumptionFields = this.shadowRoot.getElementById("consumption-fields");
+      const entryType = this.shadowRoot.querySelector('input[name="entryType"]:checked').value;
+
+      if (entryType === "meter_reading") {
+        meterReadingFields.style.display = "block";
+        consumptionFields.style.display = "none";
+        // Make meter reading required
+        this.shadowRoot.getElementById("add-meter-reading").required = true;
+        this.shadowRoot.getElementById("add-consumption").required = false;
+        this.shadowRoot.getElementById("add-period-start").required = false;
+        this.shadowRoot.getElementById("add-period-end").required = false;
+      } else {
+        meterReadingFields.style.display = "none";
+        consumptionFields.style.display = "block";
+        // Make consumption fields required
+        this.shadowRoot.getElementById("add-meter-reading").required = false;
+        this.shadowRoot.getElementById("add-consumption").required = true;
+        this.shadowRoot.getElementById("add-period-start").required = true;
+        this.shadowRoot.getElementById("add-period-end").required = true;
       }
     }
 
@@ -734,8 +804,9 @@ class HAMeterMatePanel extends HTMLElement {
         <table class="readings-table">
           <thead>
             <tr>
-              <th>Date & Time</th>
-              <th>Value</th>
+              <th>Period</th>
+              <th>Meter Reading</th>
+              <th>Consumption</th>
               <th>Notes</th>
               <th>Actions</th>
             </tr>
@@ -743,8 +814,19 @@ class HAMeterMatePanel extends HTMLElement {
           <tbody>
             ${readings.map(reading => `
               <tr>
-                <td>${this._formatDateTime(reading.timestamp)}</td>
+                <td>
+                  ${reading.period_start && reading.period_end ?
+                    `${this._formatDateTime(reading.period_start)} - ${this._formatDateTime(reading.period_end)}` :
+                    this._formatDateTime(reading.timestamp)
+                  }
+                </td>
                 <td>${this._formatValue(reading.value, reading.unit)}</td>
+                <td>
+                  ${reading.consumption ?
+                    this._formatValue(reading.consumption, reading.unit) :
+                    '-'
+                  }
+                </td>
                 <td>${reading.notes || '-'}</td>
                 <td class="action-buttons">
                   <button class="btn-icon" onclick="window.meterMatePanel._openEditDialog(${JSON.stringify(reading).replace(/"/g, '&quot;')})" title="Edit">
@@ -770,17 +852,59 @@ class HAMeterMatePanel extends HTMLElement {
             </div>
             <form onsubmit="window.meterMatePanel._handleAddReading(event)">
               <div class="dialog-content">
+                <!-- Entry Type Selection -->
                 <div class="form-field">
-                  <label for="add-value">Reading Value</label>
-                  <input id="add-value" name="value" type="number" step="0.01" required autofocus>
+                  <label>Entry Type</label>
+                  <div class="radio-group">
+                    <label class="radio-label">
+                      <input type="radio" name="entryType" value="meter_reading" checked onchange="window.meterMatePanel._toggleEntryType()">
+                      <span>Meter Reading</span>
+                      <small>Enter the current meter reading (consumption will be calculated)</small>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" name="entryType" value="consumption" onchange="window.meterMatePanel._toggleEntryType()">
+                      <span>Consumption Period</span>
+                      <small>Enter consumption for a specific period (ending meter reading will be calculated)</small>
+                    </label>
+                  </div>
                 </div>
-                <div class="form-field">
-                  <label for="add-datetime">Date & Time</label>
-                  <input id="add-datetime" name="datetime" type="datetime-local" value="${new Date().toISOString().slice(0, 16)}" required>
+
+                <!-- Meter Reading Fields -->
+                <div id="meter-reading-fields">
+                  <div class="form-field">
+                    <label for="add-meter-reading">Meter Reading</label>
+                    <input id="add-meter-reading" name="meter_reading" type="number" step="0.001" min="0">
+                    <small>The current reading shown on your meter</small>
+                  </div>
+                  <div class="form-field">
+                    <label for="add-reading-datetime">Reading Date & Time</label>
+                    <input id="add-reading-datetime" name="reading_datetime" type="datetime-local" value="${new Date().toISOString().slice(0, 16)}">
+                  </div>
                 </div>
+
+                <!-- Consumption Period Fields -->
+                <div id="consumption-fields" style="display: none;">
+                  <div class="form-field">
+                    <label for="add-consumption">Consumption Amount</label>
+                    <input id="add-consumption" name="consumption" type="number" step="0.001" min="0">
+                    <small>Amount consumed during the period</small>
+                  </div>
+                  <div class="form-field-group">
+                    <div class="form-field">
+                      <label for="add-period-start">Period Start</label>
+                      <input id="add-period-start" name="period_start" type="datetime-local">
+                    </div>
+                    <div class="form-field">
+                      <label for="add-period-end">Period End</label>
+                      <input id="add-period-end" name="period_end" type="datetime-local" value="${new Date().toISOString().slice(0, 16)}">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Common Fields -->
                 <div class="form-field">
                   <label for="add-notes">Notes (optional)</label>
-                  <input id="add-notes" name="notes" type="text">
+                  <input id="add-notes" name="notes" type="text" placeholder="e.g., Bill number, special circumstances">
                 </div>
               </div>
               <div class="dialog-actions">

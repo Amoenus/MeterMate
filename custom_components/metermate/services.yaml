@@ -27,16 +27,6 @@ add_reading:
       required: false
       selector:
         datetime:
-    reading_type:
-      name: Reading Type
-      description: Type of reading - cumulative (meter reading) or periodic (consumption amount)
-      required: false
-      default: cumulative
-      selector:
-        select:
-          options:
-            - cumulative
-            - periodic
     unit:
       name: Unit of Measurement
       description: Unit for the reading (kWh, m³, gal, etc.)
@@ -84,16 +74,6 @@ update_reading:
       required: false
       selector:
         datetime:
-    reading_type:
-      name: Reading Type
-      description: Type of reading
-      required: false
-      default: cumulative
-      selector:
-        select:
-          options:
-            - cumulative
-            - periodic
     unit:
       name: Unit of Measurement
       description: Unit for the reading
@@ -199,3 +179,91 @@ rebuild_history:
       default: true
       selector:
         boolean:
+
+# Enhanced Services for Meter Reading Management
+
+add_meter_reading:
+  name: Add Meter Reading
+  description: Add a meter reading and automatically calculate consumption from the previous reading
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity to add the reading to
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    meter_reading:
+      name: Meter Reading
+      description: The actual meter reading value (cumulative)
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.001
+          mode: box
+    timestamp:
+      name: Reading Timestamp
+      description: When the reading was taken (defaults to now)
+      required: false
+      selector:
+        datetime:
+    unit:
+      name: Unit of Measurement
+      description: Unit for the reading (kWh, m³, gal, etc.)
+      required: false
+      default: kWh
+      selector:
+        text:
+    notes:
+      name: Notes
+      description: Optional notes about this reading (e.g., bill number)
+      required: false
+      selector:
+        text:
+
+add_consumption_period:
+  name: Add Consumption Period
+  description: Add consumption data for a period and automatically calculate the ending meter reading
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity to add the consumption to
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    consumption:
+      name: Consumption Amount
+      description: The amount consumed during the period
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.001
+          mode: box
+    period_start:
+      name: Period Start
+      description: Start date and time of the consumption period
+      required: true
+      selector:
+        datetime:
+    period_end:
+      name: Period End
+      description: End date and time of the consumption period
+      required: true
+      selector:
+        datetime:
+    unit:
+      name: Unit of Measurement
+      description: Unit for the consumption (kWh, m³, gal, etc.)
+      required: false
+      default: kWh
+      selector:
+        text:
+    notes:
+      name: Notes
+      description: Optional notes about this period (e.g., bill number)
+      required: false
+      selector:
+        text:

@@ -89,9 +89,6 @@ window.MeterMateUI = (function() {
       const value = document.createElement('div');
       value.textContent = `${reading.value.toFixed(2)} ${reading.unit || 'kWh'}`;
 
-      const type = document.createElement('div');
-      type.textContent = reading.reading_type || 'cumulative';
-
       const notes = document.createElement('div');
       notes.textContent = reading.notes || '—';
 
@@ -106,7 +103,6 @@ window.MeterMateUI = (function() {
 
       row.appendChild(timestamp);
       row.appendChild(value);
-      row.appendChild(type);
       row.appendChild(notes);
       row.appendChild(actions);
 
