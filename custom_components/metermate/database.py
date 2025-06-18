@@ -295,14 +295,13 @@ class HistoricalDataHandler:
                     conn.execute(
                         """INSERT INTO states
                            (entity_id, state, attributes, last_changed_ts,
-                            last_updated_ts, created_ts)
-                           VALUES (?, ?, ?, ?, ?, ?)""",
+                            last_updated_ts)
+                           VALUES (?, ?, ?, ?, ?)""",
                         (
                             entity_id,
                             str(value),
                             attrs_json,
                             unix_timestamp,
-                            current_ts,
                             current_ts,
                         ),
                     )
@@ -375,14 +374,13 @@ class HistoricalDataHandler:
                 conn.execute(
                     """INSERT INTO states
                        (entity_id, state, attributes, last_changed_ts,
-                        last_updated_ts, created_ts)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                        last_updated_ts)
+                       VALUES (?, ?, ?, ?, ?)""",
                     (
                         entity_id,
                         str(value),
                         attrs_json,
                         unix_timestamp,
-                        current_ts,
                         current_ts,
                     ),
                 )
