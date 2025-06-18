@@ -624,7 +624,7 @@ class MeterMateDataManager:
         """Handle data clearing based on rebuild type."""
         if complete_rebuild:
             _LOGGER.info("Performing complete data wipe for %s", entity_id)
-            clear_success = self._historical_handler.complete_clear_entity_data(
+            clear_success = await self._historical_handler.complete_clear_entity_data(
                 entity_id
             )
             if clear_success:
@@ -633,7 +633,9 @@ class MeterMateDataManager:
                 _LOGGER.warning("Failed to clear existing data for %s", entity_id)
         else:
             # For incremental rebuilds, just clean up invalid states
-            cleanup_success = self._historical_handler.cleanup_invalid_states(entity_id)
+            cleanup_success = await self._historical_handler.cleanup_invalid_states(
+                entity_id
+            )
             if cleanup_success:
                 _LOGGER.debug("Cleaned up invalid states for %s", entity_id)
 
@@ -708,7 +710,7 @@ class MeterMateDataManager:
             )
 
             if should_add_state:
-                state_success = self._historical_handler.add_historical_state(
+                state_success = await self._historical_handler.add_historical_state(
                     entity_id=entity_id,
                     timestamp=reading.timestamp,
                     value=reading.value,

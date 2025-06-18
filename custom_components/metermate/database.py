@@ -240,7 +240,7 @@ class HistoricalDataHandler:
         except SQLAlchemyError as e:
             LOGGER.warning("Could not add short-term statistic: %s", e)
 
-    def add_historical_state(
+    async def add_historical_state(
         self,
         entity_id: str,
         timestamp: datetime,
@@ -254,83 +254,93 @@ class HistoricalDataHandler:
         if not self._validate_recorder_available():
             return False
 
-        unix_timestamp = timestamp.timestamp()
+        def _add_historical_state_sync(
+            attrs: dict | None,
+        ) -> bool:
+            unix_timestamp = timestamp.timestamp()
 
-        # Prepare attributes
-        if attributes is None:
-            attributes = {
-                "unit_of_measurement": unit,
-                "device_class": "energy",
-                "state_class": "total_increasing",
-            }
+            # Prepare attributes
+            if attrs is None:
+                attrs = {
+                    "unit_of_measurement": unit,
+                    "device_class": "energy",
+                    "state_class": "total_increasing",
+                }
 
-        try:
-            with session_scope(hass=self.hass) as session:
-                # Get or create states metadata
-                states_metadata = self._get_or_create_states_metadata(
-                    session, entity_id
+            try:
+                with session_scope(hass=self.hass) as session:
+                    # Get or create states metadata
+                    states_metadata = self._get_or_create_states_metadata(
+                        session, entity_id
+                    )
+                    if not states_metadata:
+                        return False
+
+                    # Check if we should add this state (avoid duplicates/noise)
+                    if not force_add:
+                        recent_stmt = (
+                            select(States)
+                            .where(States.metadata_id == states_metadata.metadata_id)
+                            .order_by(desc(States.last_changed_ts))
+                            .limit(1)
+                        )
+                        recent_state = session.execute(recent_stmt).scalar_one_or_none()
+
+                        if recent_state and self._should_skip_state(
+                            recent_state, value, unix_timestamp
+                        ):
+                            return True  # Skip, but not an error
+
+                    current_ts = time.time()
+                    attrs_json = str(attrs).replace("'", '"')
+
+                    # Check if state exists for this exact timestamp
+                    existing_stmt = select(States).where(
+                        and_(
+                            States.metadata_id == states_metadata.metadata_id,
+                            func.abs(States.last_changed_ts - unix_timestamp) < 1.0,
+                        )
+                    )
+                    existing_state = session.execute(existing_stmt).scalar_one_or_none()
+
+                    if existing_state:
+                        # Update existing state
+                        existing_state.state = str(value)
+                        existing_state.attributes = attrs_json
+                        existing_state.last_changed_ts = unix_timestamp
+                        existing_state.last_updated_ts = current_ts
+                        LOGGER.debug(
+                            "Updated existing state for %s at %s", entity_id, timestamp
+                        )
+                    else:
+                        # Create new state
+                        state = States(
+                            metadata_id=states_metadata.metadata_id,
+                            entity_id=entity_id,
+                            state=str(value),
+                            attributes=attrs_json,
+                            last_changed_ts=unix_timestamp,
+                            last_updated_ts=current_ts,
+                        )
+                        session.add(state)
+                        LOGGER.debug(
+                            "Added new historical state for %s at %s",
+                            entity_id,
+                            timestamp,
+                        )
+
+                    return True
+
+            except SQLAlchemyError as e:
+                LOGGER.error(
+                    "SQLAlchemy error adding historical state for %s: %s", entity_id, e
                 )
-                if not states_metadata:
-                    return False
+                return False
 
-                # Check if we should add this state (avoid duplicates/noise)
-                if not force_add:
-                    recent_stmt = (
-                        select(States)
-                        .where(States.metadata_id == states_metadata.metadata_id)
-                        .order_by(desc(States.last_changed_ts))
-                        .limit(1)
-                    )
-                    recent_state = session.execute(recent_stmt).scalar_one_or_none()
-
-                    if recent_state and self._should_skip_state(
-                        recent_state, value, unix_timestamp
-                    ):
-                        return True  # Skip, but not an error
-
-                current_ts = time.time()
-                attrs_json = str(attributes).replace("'", '"')
-
-                # Check if state exists for this exact timestamp
-                existing_stmt = select(States).where(
-                    and_(
-                        States.metadata_id == states_metadata.metadata_id,
-                        func.abs(States.last_changed_ts - unix_timestamp) < 1.0,
-                    )
-                )
-                existing_state = session.execute(existing_stmt).scalar_one_or_none()
-
-                if existing_state:
-                    # Update existing state
-                    existing_state.state = str(value)
-                    existing_state.attributes = attrs_json
-                    existing_state.last_changed_ts = unix_timestamp
-                    existing_state.last_updated_ts = current_ts
-                    LOGGER.debug(
-                        "Updated existing state for %s at %s", entity_id, timestamp
-                    )
-                else:
-                    # Create new state
-                    state = States(
-                        metadata_id=states_metadata.metadata_id,
-                        entity_id=entity_id,
-                        state=str(value),
-                        attributes=attrs_json,
-                        last_changed_ts=unix_timestamp,
-                        last_updated_ts=current_ts,
-                    )
-                    session.add(state)
-                    LOGGER.debug(
-                        "Added new historical state for %s at %s", entity_id, timestamp
-                    )
-
-                return True
-
-        except SQLAlchemyError as e:
-            LOGGER.error(
-                "SQLAlchemy error adding historical state for %s: %s", entity_id, e
-            )
-            return False
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(
+            _add_historical_state_sync, attributes
+        )
 
     def _should_skip_state(
         self, recent_state: States, new_value: float, new_timestamp: float
@@ -351,138 +361,156 @@ class HistoricalDataHandler:
         except (ValueError, TypeError):
             return False  # Previous state wasn't numeric, proceed
 
-    def get_latest_statistic(self, entity_id: str) -> tuple[datetime, float] | None:
+    async def get_latest_statistic(
+        self, entity_id: str
+    ) -> tuple[datetime, float] | None:
         """Get the latest statistic for an entity using SQLAlchemy."""
         if not self._validate_recorder_available():
             return None
 
-        statistic_id = entity_id
+        def _get_latest_statistic_sync() -> tuple[datetime, float] | None:
+            statistic_id = entity_id
 
-        try:
-            with session_scope(hass=self.hass) as session:
-                stmt = (
-                    select(Statistics.start_ts, Statistics.sum)
-                    .join(StatisticsMeta, Statistics.metadata_id == StatisticsMeta.id)
-                    .where(StatisticsMeta.statistic_id == statistic_id)
-                    .order_by(desc(Statistics.start_ts))
-                    .limit(1)
-                )
+            try:
+                with session_scope(hass=self.hass) as session:
+                    stmt = (
+                        select(Statistics.start_ts, Statistics.sum)
+                        .join(
+                            StatisticsMeta, Statistics.metadata_id == StatisticsMeta.id
+                        )
+                        .where(StatisticsMeta.statistic_id == statistic_id)
+                        .order_by(desc(Statistics.start_ts))
+                        .limit(1)
+                    )
 
-                result = session.execute(stmt).first()
+                    result = session.execute(stmt).first()
 
-                if result:
-                    timestamp = dt_util.utc_from_timestamp(result[0])
-                    return timestamp, result[1]
+                    if result:
+                        timestamp = dt_util.utc_from_timestamp(result[0])
+                        return timestamp, result[1]
 
+                    return None
+
+            except SQLAlchemyError as e:
+                LOGGER.error("Error getting latest statistic for %s: %s", entity_id, e)
                 return None
 
-        except SQLAlchemyError as e:
-            LOGGER.error("Error getting latest statistic for %s: %s", entity_id, e)
-            return None
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(_get_latest_statistic_sync)
 
-    def clear_statistics_for_entity(self, entity_id: str) -> bool:
+    async def clear_statistics_for_entity(self, entity_id: str) -> bool:
         """Clear all statistics data for an entity using SQLAlchemy."""
         if not self._validate_recorder_available():
             return False
 
-        try:
-            with session_scope(hass=self.hass) as session:
-                # Find metadata for the entity
-                metadata_stmt = select(StatisticsMeta).where(
-                    StatisticsMeta.statistic_id == entity_id
-                )
-                metadata = session.execute(metadata_stmt).scalar_one_or_none()
+        def _clear_statistics_sync() -> bool:
+            try:
+                with session_scope(hass=self.hass) as session:
+                    # Find metadata for the entity
+                    metadata_stmt = select(StatisticsMeta).where(
+                        StatisticsMeta.statistic_id == entity_id
+                    )
+                    metadata = session.execute(metadata_stmt).scalar_one_or_none()
 
-                if not metadata:
-                    LOGGER.debug("No statistics metadata found for %s", entity_id)
+                    if not metadata:
+                        LOGGER.debug("No statistics metadata found for %s", entity_id)
+                        return True
+
+                    # Delete statistics entries
+                    stats_delete = delete(Statistics).where(
+                        Statistics.metadata_id == metadata.id
+                    )
+                    result = session.execute(stats_delete)
+                    deleted_count = result.rowcount
+
+                    # Delete short-term statistics entries
+                    short_term_delete = delete(StatisticsShortTerm).where(
+                        StatisticsShortTerm.metadata_id == metadata.id
+                    )
+                    short_result = session.execute(short_term_delete)
+                    deleted_short_term = short_result.rowcount
+
+                    LOGGER.info(
+                        "Cleared statistics for %s: %d long-term, %d short-term",
+                        entity_id,
+                        deleted_count,
+                        deleted_short_term,
+                    )
                     return True
 
-                # Delete statistics entries
-                stats_delete = delete(Statistics).where(
-                    Statistics.metadata_id == metadata.id
-                )
-                result = session.execute(stats_delete)
-                deleted_count = result.rowcount
+            except SQLAlchemyError as e:
+                LOGGER.error("Error clearing statistics for %s: %s", entity_id, e)
+                return False
 
-                # Delete short-term statistics entries
-                short_term_delete = delete(StatisticsShortTerm).where(
-                    StatisticsShortTerm.metadata_id == metadata.id
-                )
-                short_result = session.execute(short_term_delete)
-                deleted_short_term = short_result.rowcount
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(_clear_statistics_sync)
 
-                LOGGER.info(
-                    "Cleared statistics for %s: %d long-term, %d short-term",
-                    entity_id,
-                    deleted_count,
-                    deleted_short_term,
-                )
-                return True
-
-        except SQLAlchemyError as e:
-            LOGGER.error("Error clearing statistics for %s: %s", entity_id, e)
-            return False
-
-    def clear_states_for_entity(
+    async def clear_states_for_entity(
         self, entity_id: str, *, keep_latest: bool = True
     ) -> bool:
         """Clear state history for an entity using SQLAlchemy."""
         if not self._validate_recorder_available():
             return False
 
-        try:
-            with session_scope(hass=self.hass) as session:
-                # Find states metadata
-                metadata_stmt = select(StatesMeta).where(
-                    StatesMeta.entity_id == entity_id
-                )
-                metadata = session.execute(metadata_stmt).scalar_one_or_none()
+        def _clear_states_sync() -> bool:
+            try:
+                with session_scope(hass=self.hass) as session:
+                    # Find states metadata
+                    metadata_stmt = select(StatesMeta).where(
+                        StatesMeta.entity_id == entity_id
+                    )
+                    metadata = session.execute(metadata_stmt).scalar_one_or_none()
 
-                if not metadata:
-                    LOGGER.debug("No states metadata found for %s", entity_id)
+                    if not metadata:
+                        LOGGER.debug("No states metadata found for %s", entity_id)
+                        return True
+
+                    if keep_latest:
+                        # Keep only the most recent state
+                        latest_stmt = (
+                            select(States.state_id)
+                            .where(States.metadata_id == metadata.metadata_id)
+                            .order_by(desc(States.last_changed_ts))
+                            .limit(1)
+                        )
+                        latest_result = session.execute(
+                            latest_stmt
+                        ).scalar_one_or_none()
+
+                        if latest_result:
+                            # Delete all except the latest
+                            delete_stmt = delete(States).where(
+                                and_(
+                                    States.metadata_id == metadata.metadata_id,
+                                    States.state_id != latest_result,
+                                )
+                            )
+                        else:
+                            # No states found, nothing to delete
+                            return True
+                    else:
+                        # Delete all states
+                        delete_stmt = delete(States).where(
+                            States.metadata_id == metadata.metadata_id
+                        )
+
+                    result = session.execute(delete_stmt)
+                    deleted_count = result.rowcount
+
+                    LOGGER.info(
+                        "Cleared %d state entries for %s (keep_latest=%s)",
+                        deleted_count,
+                        entity_id,
+                        keep_latest,
+                    )
                     return True
 
-                if keep_latest:
-                    # Keep only the most recent state
-                    latest_stmt = (
-                        select(States.state_id)
-                        .where(States.metadata_id == metadata.metadata_id)
-                        .order_by(desc(States.last_changed_ts))
-                        .limit(1)
-                    )
-                    latest_result = session.execute(latest_stmt).scalar_one_or_none()
+            except SQLAlchemyError as e:
+                LOGGER.error("Error clearing states for %s: %s", entity_id, e)
+                return False
 
-                    if latest_result:
-                        # Delete all except the latest
-                        delete_stmt = delete(States).where(
-                            and_(
-                                States.metadata_id == metadata.metadata_id,
-                                States.state_id != latest_result,
-                            )
-                        )
-                    else:
-                        # No states found, nothing to delete
-                        return True
-                else:
-                    # Delete all states
-                    delete_stmt = delete(States).where(
-                        States.metadata_id == metadata.metadata_id
-                    )
-
-                result = session.execute(delete_stmt)
-                deleted_count = result.rowcount
-
-                LOGGER.info(
-                    "Cleared %d state entries for %s (keep_latest=%s)",
-                    deleted_count,
-                    entity_id,
-                    keep_latest,
-                )
-                return True
-
-        except SQLAlchemyError as e:
-            LOGGER.error("Error clearing states for %s: %s", entity_id, e)
-            return False
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(_clear_states_sync)
 
     async def validate_database_access(self) -> bool:
         """Validate that we can access the database using SQLAlchemy."""
@@ -504,82 +532,90 @@ class HistoricalDataHandler:
         # Run in executor to avoid blocking the event loop
         return await self.hass.async_add_executor_job(_sync_validate)
 
-    def clear_all_metermate_statistics(self) -> bool:
+    async def clear_all_metermate_statistics(self) -> bool:
         """Clear all statistics created by MeterMate integration."""
         if not self._validate_recorder_available():
             return False
 
-        try:
-            with session_scope(hass=self.hass) as session:
-                # Find all MeterMate metadata entries
-                metadata_stmt = select(StatisticsMeta).where(
-                    StatisticsMeta.source == DOMAIN
-                )
-                metadata_results = session.execute(metadata_stmt).scalars().all()
+        def _clear_all_statistics_sync() -> bool:
+            try:
+                with session_scope(hass=self.hass) as session:
+                    # Find all MeterMate metadata entries
+                    metadata_stmt = select(StatisticsMeta).where(
+                        StatisticsMeta.source == DOMAIN
+                    )
+                    metadata_results = session.execute(metadata_stmt).scalars().all()
 
-                if not metadata_results:
-                    LOGGER.debug("No MeterMate statistics metadata found")
+                    if not metadata_results:
+                        LOGGER.debug("No MeterMate statistics metadata found")
+                        return True
+
+                    total_deleted = 0
+                    total_short_term_deleted = 0
+
+                    for metadata in metadata_results:
+                        # Delete statistics entries
+                        stats_delete = delete(Statistics).where(
+                            Statistics.metadata_id == metadata.id
+                        )
+                        result = session.execute(stats_delete)
+                        deleted_count = result.rowcount
+                        total_deleted += deleted_count
+
+                        # Delete short-term statistics entries
+                        short_term_delete = delete(StatisticsShortTerm).where(
+                            StatisticsShortTerm.metadata_id == metadata.id
+                        )
+                        short_result = session.execute(short_term_delete)
+                        deleted_short_term = short_result.rowcount
+                        total_short_term_deleted += deleted_short_term
+
+                        LOGGER.debug(
+                            "Cleared statistics for %s: %d long-term, %d short-term",
+                            metadata.statistic_id,
+                            deleted_count,
+                            deleted_short_term,
+                        )
+
+                    LOGGER.info(
+                        "Cleared all MeterMate statistics: %d long-term, "
+                        "%d short-term entries from %d entities",
+                        total_deleted,
+                        total_short_term_deleted,
+                        len(metadata_results),
+                    )
                     return True
 
-                total_deleted = 0
-                total_short_term_deleted = 0
+            except SQLAlchemyError as e:
+                LOGGER.error("Error clearing all MeterMate statistics: %s", e)
+                return False
 
-                for metadata in metadata_results:
-                    # Delete statistics entries
-                    stats_delete = delete(Statistics).where(
-                        Statistics.metadata_id == metadata.id
-                    )
-                    result = session.execute(stats_delete)
-                    deleted_count = result.rowcount
-                    total_deleted += deleted_count
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(_clear_all_statistics_sync)
 
-                    # Delete short-term statistics entries
-                    short_term_delete = delete(StatisticsShortTerm).where(
-                        StatisticsShortTerm.metadata_id == metadata.id
-                    )
-                    short_result = session.execute(short_term_delete)
-                    deleted_short_term = short_result.rowcount
-                    total_short_term_deleted += deleted_short_term
-
-                    LOGGER.debug(
-                        "Cleared statistics for %s: %d long-term, %d short-term",
-                        metadata.statistic_id,
-                        deleted_count,
-                        deleted_short_term,
-                    )
-
-                LOGGER.info(
-                    "Cleared all MeterMate statistics: %d long-term, "
-                    "%d short-term entries from %d entities",
-                    total_deleted,
-                    total_short_term_deleted,
-                    len(metadata_results),
-                )
-                return True
-
-        except SQLAlchemyError as e:
-            LOGGER.error("Error clearing all MeterMate statistics: %s", e)
-            return False
-
-    def get_metermate_entities(self) -> list[str]:
+    async def get_metermate_entities(self) -> list[str]:
         """Get list of all entity IDs that have MeterMate statistics."""
         if not self._validate_recorder_available():
             return []
 
-        try:
-            with session_scope(hass=self.hass) as session:
-                stmt = select(StatisticsMeta.statistic_id).where(
-                    StatisticsMeta.source == DOMAIN
-                )
-                results = session.execute(stmt).scalars().all()
-                # Filter out None values (shouldn't happen but type safety)
-                return [r for r in results if r is not None]
+        def _get_entities_sync() -> list[str]:
+            try:
+                with session_scope(hass=self.hass) as session:
+                    stmt = select(StatisticsMeta.statistic_id).where(
+                        StatisticsMeta.source == DOMAIN
+                    )
+                    results = session.execute(stmt).scalars().all()
+                    # Filter out None values (shouldn't happen but type safety)
+                    return [r for r in results if r is not None]
 
-        except SQLAlchemyError as e:
-            LOGGER.error("Error getting MeterMate entities: %s", e)
-            return []
+            except SQLAlchemyError as e:
+                LOGGER.error("Error getting MeterMate entities: %s", e)
+                return []
 
-    def complete_clear_entity_data(self, entity_id: str) -> bool:
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(_get_entities_sync)
+
+    async def complete_clear_entity_data(self, entity_id: str) -> bool:
         """Completely clear all data (states and statistics) for an entity."""
         if not self._validate_recorder_available():
             return False
@@ -587,10 +623,12 @@ class HistoricalDataHandler:
         LOGGER.info("Performing complete data clear for %s", entity_id)
 
         # Clear statistics
-        stats_success = self.clear_statistics_for_entity(entity_id)
+        stats_success = await self.clear_statistics_for_entity(entity_id)
 
         # Clear states (without keeping latest since this is a complete clear)
-        states_success = self.clear_states_for_entity(entity_id, keep_latest=False)
+        states_success = await self.clear_states_for_entity(
+            entity_id, keep_latest=False
+        )
 
         success = stats_success and states_success
 
@@ -601,55 +639,61 @@ class HistoricalDataHandler:
 
         return success
 
-    def cleanup_invalid_states(self, entity_id: str) -> bool:
+    async def cleanup_invalid_states(self, entity_id: str) -> bool:
         """Clean up invalid or problematic states for an entity."""
         if not self._validate_recorder_available():
             return False
 
-        try:
-            with session_scope(hass=self.hass) as session:
-                # Find states metadata
-                metadata_stmt = select(StatesMeta).where(
-                    StatesMeta.entity_id == entity_id
-                )
-                metadata = session.execute(metadata_stmt).scalar_one_or_none()
+        def _cleanup_invalid_states_sync() -> bool:
+            try:
+                with session_scope(hass=self.hass) as session:
+                    # Find states metadata
+                    metadata_stmt = select(StatesMeta).where(
+                        StatesMeta.entity_id == entity_id
+                    )
+                    metadata = session.execute(metadata_stmt).scalar_one_or_none()
 
-                if not metadata:
-                    LOGGER.debug("No states metadata found for %s", entity_id)
+                    if not metadata:
+                        LOGGER.debug("No states metadata found for %s", entity_id)
+                        return True
+
+                    # Find and delete states with invalid values
+                    # (non-numeric, negative for totals, etc.)
+                    invalid_conditions = [
+                        # States with null values
+                        States.state.is_(None),
+                        # States with empty string values
+                        States.state == "",
+                        # Add more conditions as needed for invalid states
+                    ]
+
+                    delete_stmt = delete(States).where(
+                        and_(
+                            States.metadata_id == metadata.metadata_id,
+                            # At least one invalid condition must be true
+                            or_(*invalid_conditions),
+                        )
+                    )
+
+                    result = session.execute(delete_stmt)
+                    deleted_count = result.rowcount
+
+                    if deleted_count > 0:
+                        LOGGER.info(
+                            "Cleaned up %d invalid states for %s",
+                            deleted_count,
+                            entity_id,
+                        )
+                    else:
+                        LOGGER.debug("No invalid states found for %s", entity_id)
+
                     return True
 
-                # Find and delete states with invalid values
-                # (non-numeric, negative for totals, etc.)
-                invalid_conditions = [
-                    # States with null values
-                    States.state.is_(None),
-                    # States with empty string values
-                    States.state == "",
-                    # Add more conditions as needed for invalid states
-                ]
-
-                delete_stmt = delete(States).where(
-                    and_(
-                        States.metadata_id == metadata.metadata_id,
-                        # At least one invalid condition must be true
-                        or_(*invalid_conditions),
-                    )
+            except SQLAlchemyError as e:
+                LOGGER.error(
+                    "Error cleaning up invalid states for %s: %s", entity_id, e
                 )
+                return False
 
-                result = session.execute(delete_stmt)
-                deleted_count = result.rowcount
-
-                if deleted_count > 0:
-                    LOGGER.info(
-                        "Cleaned up %d invalid states for %s",
-                        deleted_count,
-                        entity_id,
-                    )
-                else:
-                    LOGGER.debug("No invalid states found for %s", entity_id)
-
-                return True
-
-        except SQLAlchemyError as e:
-            LOGGER.error("Error cleaning up invalid states for %s: %s", entity_id, e)
-            return False
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(_cleanup_invalid_states_sync)
