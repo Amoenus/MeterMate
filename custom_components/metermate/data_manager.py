@@ -7,8 +7,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+from homeassistant.components.recorder.models import (
+    StatisticData,
+    StatisticMeanType,
+    StatisticMetaData,
+)
 from homeassistant.components.recorder.statistics import async_add_external_statistics
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.helpers import storage
 from homeassistant.util import dt as dt_util
 
@@ -424,15 +429,17 @@ class MeterMateDataManager:
         unit = readings[0].unit if readings else "kWh"
 
         # Create metadata first - external statistics need domain:id format
-        statistic_id = f"{ATTR_INTEGRATION_NAME}:{entity_id.replace('sensor.', '')}"
-        metadata = StatisticMetaData(
-            has_mean=False,
-            has_sum=True,
-            name=entity_id.replace("sensor.", "").replace("_", " ").title(),
-            source=ATTR_INTEGRATION_NAME,
-            statistic_id=statistic_id,
-            unit_of_measurement=unit,
+        statistic_id: str = (
+            f"{ATTR_INTEGRATION_NAME}:{entity_id.replace('sensor.', '')}"
         )
+        metadata: StatisticMetaData = {
+            "mean_type": StatisticMeanType.NONE,
+            "has_sum": True,
+            "name": entity_id.replace("sensor.", "").replace("_", " ").title(),
+            "source": ATTR_INTEGRATION_NAME,
+            "statistic_id": statistic_id,
+            ATTR_UNIT_OF_MEASUREMENT: unit,
+        }
 
         # Convert readings to StatisticData
         statistics = []
