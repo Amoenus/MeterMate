@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-import homeassistant
 from sqlalchemy import and_, delete, desc, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -16,6 +15,8 @@ from homeassistant.components.recorder.db_schema import (
     StatisticsMeta,
     StatisticsShortTerm,
 )
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.const import ATTR_DEVICE_CLASS, ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.helpers.recorder import get_instance, session_scope
 from homeassistant.util import dt as dt_util
 
@@ -263,9 +264,9 @@ class HistoricalDataHandler:
             # Prepare attributes
             if attrs is None:
                 attrs = {
-                    "unit_of_measurement": unit,
-                    "device_class": "energy",
-                    "state_class": "total_increasing",
+                    ATTR_UNIT_OF_MEASUREMENT: unit,
+                    ATTR_DEVICE_CLASS: SensorDeviceClass.ENERGY,
+                    "state_class": SensorStateClass.TOTAL_INCREASING,
                 }
 
             try:
