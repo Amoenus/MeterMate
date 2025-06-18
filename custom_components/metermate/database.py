@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import homeassistant
 from sqlalchemy import and_, delete, desc, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -200,7 +201,7 @@ class HistoricalDataHandler:
                 return False
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(_add_statistic_sync)
+        return await self.recorder.async_add_executor_job(_add_statistic_sync)
 
     def _add_short_term_statistic(
         self,
@@ -338,7 +339,7 @@ class HistoricalDataHandler:
                 return False
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(
+        return await self.recorder.async_add_executor_job(
             _add_historical_state_sync, attributes
         )
 
@@ -396,7 +397,7 @@ class HistoricalDataHandler:
                 return None
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(_get_latest_statistic_sync)
+        return await self.recorder.async_add_executor_job(_get_latest_statistic_sync)
 
     async def clear_statistics_for_entity(self, entity_id: str) -> bool:
         """Clear all statistics data for an entity using SQLAlchemy."""
@@ -443,7 +444,7 @@ class HistoricalDataHandler:
                 return False
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(_clear_statistics_sync)
+        return await self.recorder.async_add_executor_job(_clear_statistics_sync)
 
     async def clear_states_for_entity(
         self, entity_id: str, *, keep_latest: bool = True
@@ -510,7 +511,7 @@ class HistoricalDataHandler:
                 return False
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(_clear_states_sync)
+        return await self.recorder.async_add_executor_job(_clear_states_sync)
 
     async def validate_database_access(self) -> bool:
         """Validate that we can access the database using SQLAlchemy."""
@@ -530,7 +531,7 @@ class HistoricalDataHandler:
                 return False
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(_sync_validate)
+        return await self.recorder.async_add_executor_job(_sync_validate)
 
     async def clear_all_metermate_statistics(self) -> bool:
         """Clear all statistics created by MeterMate integration."""
@@ -591,7 +592,7 @@ class HistoricalDataHandler:
                 return False
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(_clear_all_statistics_sync)
+        return await self.recorder.async_add_executor_job(_clear_all_statistics_sync)
 
     async def get_metermate_entities(self) -> list[str]:
         """Get list of all entity IDs that have MeterMate statistics."""
@@ -613,7 +614,7 @@ class HistoricalDataHandler:
                 return []
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(_get_entities_sync)
+        return await self.recorder.async_add_executor_job(_get_entities_sync)
 
     async def complete_clear_entity_data(self, entity_id: str) -> bool:
         """Completely clear all data (states and statistics) for an entity."""
@@ -696,4 +697,4 @@ class HistoricalDataHandler:
                 return False
 
         # Run in executor to avoid blocking the event loop
-        return await self.hass.async_add_executor_job(_cleanup_invalid_states_sync)
+        return await self.recorder.async_add_executor_job(_cleanup_invalid_states_sync)
