@@ -49,7 +49,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         webcomponent_name="metermate-panel",
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
-        module_url="/metermate/metermate-panel.js",
+        module_url="/metermate/src/components/metermate-panel.js",
         config={"title": "MeterMate - Manual Utility Readings"},
         require_admin=False,
     )
