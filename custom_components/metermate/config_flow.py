@@ -6,10 +6,17 @@ from __future__ import annotations
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_NAME, CONF_UNIT_OF_MEASUREMENT
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.const import (
+    CONF_DEVICE_CLASS,
+    CONF_NAME,
+    CONF_UNIT_OF_MEASUREMENT,
+    UnitOfEnergy,
+    UnitOfVolume,
+)
 from homeassistant.helpers import selector
 
-from .const import CONF_DEVICE_CLASS, CONF_INITIAL_READING, DEFAULT_NAME, DOMAIN
+from .const import CONF_INITIAL_READING, DEFAULT_NAME, DOMAIN
 
 
 class MeterMateFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -43,23 +50,38 @@ class MeterMateFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_UNIT_OF_MEASUREMENT): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
-                                {"value": "kWh", "label": "kWh (Electricity)"},
-                                {"value": "Wh", "label": "Wh (Electricity)"},
-                                {"value": "MWh", "label": "MWh (Electricity)"},
-                                {"value": "m³", "label": "m³ (Gas/Water)"},
-                                {"value": "ft³", "label": "ft³ (Gas)"},
-                                {"value": "L", "label": "L (Water)"},
-                                {"value": "gal", "label": "gal (Water)"},
+                                {
+                                    "value": UnitOfEnergy.KILO_WATT_HOUR,
+                                    "label": "kWh (Electricity)",
+                                },
+                                {
+                                    "value": UnitOfEnergy.WATT_HOUR,
+                                    "label": "Wh (Electricity)",
+                                },
+                                {
+                                    "value": UnitOfEnergy.MEGA_WATT_HOUR,
+                                    "label": "MWh (Electricity)",
+                                },
+                                {
+                                    "value": UnitOfVolume.CUBIC_METERS,
+                                    "label": "m³ (Gas/Water)",
+                                },
+                                {
+                                    "value": UnitOfVolume.CUBIC_FEET,
+                                    "label": "ft³ (Gas)",
+                                },
+                                {"value": UnitOfVolume.LITERS, "label": "L (Water)"},
+                                {"value": UnitOfVolume.GALLONS, "label": "gal (Water)"},
                             ]
                         )
                     ),
                     vol.Required(CONF_DEVICE_CLASS): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
-                                {"value": "energy", "label": "Energy"},
-                                {"value": "gas", "label": "Gas"},
-                                {"value": "water", "label": "Water"},
-                                {"value": "volume", "label": "Volume"},
+                                {"value": SensorDeviceClass.ENERGY, "label": "Energy"},
+                                {"value": SensorDeviceClass.GAS, "label": "Gas"},
+                                {"value": SensorDeviceClass.WATER, "label": "Water"},
+                                {"value": SensorDeviceClass.VOLUME, "label": "Volume"},
                             ]
                         )
                     ),

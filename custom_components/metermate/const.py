@@ -15,7 +15,6 @@ ATTR_TIMESTAMP = "timestamp"
 ATTR_VALUE = "value"
 
 # Configuration (alphabetical order)
-CONF_DEVICE_CLASS = "device_class"
 CONF_INITIAL_READING = "initial_reading"
 
 # Default values
@@ -24,6 +23,3 @@ DEFAULT_NAME = "Manual Meter"
 # Reading modes (alphabetical order)
 MODE_CUMULATIVE = "cumulative"
 MODE_PERIODIC = "periodic"
-
-# Service names
-SERVICE_ADD_READING = "add_reading"

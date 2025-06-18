@@ -11,10 +11,10 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import CONF_NAME, CONF_UNIT_OF_MEASUREMENT
+from homeassistant.const import CONF_DEVICE_CLASS, CONF_NAME, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CONF_DEVICE_CLASS, CONF_INITIAL_READING, DOMAIN
+from .const import CONF_INITIAL_READING, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
