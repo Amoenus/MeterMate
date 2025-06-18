@@ -424,36 +424,6 @@ class HAMeterMatePanel extends HTMLElement {
             display: block;
           }
 
-          .meter-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-          }
-
-          .meter-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            background: var(--chip-background-color, #f5f5f5);
-            border: 2px solid transparent;
-            border-radius: 20px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 14px;
-            font-weight: 500;
-          }
-
-          .meter-chip:hover {
-            background: var(--chip-background-color-hover, #eeeeee);
-          }
-
-          .meter-chip.selected {
-            background: var(--primary-color, #1976d2);
-            color: white;
-            border-color: var(--primary-color, #1976d2);
-          }
-
           .readings-header {
             display: flex;
             align-items: center;
@@ -699,6 +669,9 @@ class HAMeterMatePanel extends HTMLElement {
               width: 95%;
             }
           }
+
+          /* Meter Selection Component Styles */
+          ${window.MeterSelection ? window.MeterSelection.getStyles() : ''}
         </style>
       `;
     }
@@ -742,46 +715,20 @@ class HAMeterMatePanel extends HTMLElement {
     }
 
     _renderMeterSelection() {
-      return `
-        <div class="card meter-selection">
-          <div class="card-header">
-            <h2>Meters</h2>
-            <button class="refresh-btn" onclick="window.meterMatePanel._refreshMeters()" title="Refresh meters">
-              <ha-icon icon="mdi:refresh"></ha-icon>
-            </button>
-            <button class="refresh-btn" onclick="window.meterMatePanel._rebuildHistory()" title="Rebuild History - Calculate consumption and clean up data">
-              <ha-icon icon="mdi:history"></ha-icon>
-            </button>
-          </div>
-          <div class="card-content">
-            ${this._loading ? `
-              <div class="loading-container">
-                <div class="spinner"></div>
-              </div>
-            ` : this._meters.length === 0 ? `
-              <div class="empty-state">
-                <ha-icon icon="mdi:meter-electric-outline"></ha-icon>
-                <p>No meters found</p>
-                <p>Configure meters in your Home Assistant configuration.</p>
-                <button class="refresh-btn" onclick="window.meterMatePanel._refreshMeters()">
-                  <ha-icon icon="mdi:refresh"></ha-icon>
-                  Refresh
-                </button>
-              </div>
-            ` : `
-              <div class="meter-chips">
-                ${this._meters.map(meter => `
-                  <div class="meter-chip ${this._selectedMeter === meter.entity_id ? 'selected' : ''}"
-                       onclick="window.meterMatePanel._handleMeterSelect('${meter.entity_id}')">
-                    <ha-icon icon="${meter.icon || 'mdi:meter-electric'}"></ha-icon>
-                    ${meter.name || meter.entity_id}
-                  </div>
-                `).join('')}
-              </div>
-            `}
-          </div>
-        </div>
-      `;
+      // Use the separate MeterSelection component
+      if (!window.MeterSelection) {
+        console.warn('MeterSelection component not loaded');
+        return '<div class="card"><div class="card-content">Loading meter selection...</div></div>';
+      }
+
+      return window.MeterSelection.render({
+        meters: this._meters,
+        loading: this._loading,
+        selectedMeter: this._selectedMeter,
+        onMeterSelect: (meterId) => this._handleMeterSelect(meterId),
+        onRefreshMeters: () => this._refreshMeters(),
+        onRebuildHistory: () => this._rebuildHistory()
+      });
     }
 
     _renderReadingsSection(readings) {

@@ -11,6 +11,7 @@ This directory contains the frontend implementation for MeterMate using Home Ass
   - **`components/`** - UI Components
     - `metermate-panel.js` - Panel loader and element registration
     - `ha-metermate-panel.js` - Modern HA UI implementation
+    - `meter-selection.js` - Meter selection component (extracted from main panel)
     - `ui-components.js` - Reusable UI components (legacy fallback)
   - **`services/`** - API and backend communication
     - `api.js` - API client for backend communication
@@ -182,5 +183,26 @@ class HAMeterMatePanel extends HTMLElement {
 3. **Entity Cards** - Mini meter cards
 4. **Automation** - Integration with HA automations
 5. **Notifications** - HA notification system
+
+## Component Architecture
+
+The frontend is now structured with modular components for better maintainability:
+
+#### MeterSelection Component (`meter-selection.js`)
+- **Purpose**: Handles meter selection UI and interactions
+- **Features**:
+  - Chip-based meter display
+  - Loading states and empty state handling
+  - Refresh and rebuild history actions
+  - Responsive design
+- **API**: Static methods for rendering and styling
+- **Usage**: Imported and used by the main panel component
+
+#### Benefits of Modular Structure
+- **Maintainability**: Each component has a single responsibility
+- **Reusability**: Components can be used in different contexts
+- **Testing**: Individual components can be tested in isolation
+- **Performance**: Components can be loaded independently
+- **Code Organization**: Clear separation of concerns
 
 This implementation provides a solid foundation for a native-feeling Home Assistant integration while maintaining the flexibility to add advanced features in the future.

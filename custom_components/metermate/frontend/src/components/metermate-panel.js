@@ -14,6 +14,11 @@
   apiScript.src = '/metermate/src/services/api.js';
   document.head.appendChild(apiScript);
 
+  // Load meter selection component
+  const meterSelectionScript = document.createElement('script');
+  meterSelectionScript.src = '/metermate/src/components/meter-selection.js';
+  document.head.appendChild(meterSelectionScript);
+
   // Import the modern HA UI version
   const script = document.createElement('script');
   script.type = 'module';
