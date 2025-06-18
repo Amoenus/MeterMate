@@ -194,6 +194,11 @@ class HAMeterMatePanel extends HTMLElement {
         return;
       }
 
+      if (!this._api) {
+        this._showAlert("error", "API not initialized. Please refresh the page.");
+        return;
+      }
+
       try {
         if (entryType === "meter_reading") {
           // Handle meter reading entry
@@ -206,12 +211,12 @@ class HAMeterMatePanel extends HTMLElement {
             return;
           }
 
-          await this._api.callService("add_meter_reading", {
-            entity_id: this._selectedMeter,
-            meter_reading: meterReading,
-            timestamp: new Date(timestamp).toISOString(),
-            notes: notes
-          });
+          await this._api.addReading(
+            this._selectedMeter,
+            meterReading,
+            new Date(timestamp).toISOString(),
+            notes
+          );
 
           this._showAlert("success", "Meter reading added successfully");
 
