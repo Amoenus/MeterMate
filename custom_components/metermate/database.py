@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy import and_, delete, desc, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from homeassistant.components.recorder.db_schema import (
@@ -33,7 +33,7 @@ VALUE_DIFFERENCE_THRESHOLD = 0.001
 TIME_DIFFERENCE_THRESHOLD = 3600
 
 
-class SQLAlchemyHistoricalDataHandler:
+class HistoricalDataHandler:
     """Handle historical data insertion using Home Assistant's SQLAlchemy models."""
 
     def __init__(self, hass: HomeAssistant) -> None:
@@ -579,6 +579,77 @@ class SQLAlchemyHistoricalDataHandler:
             LOGGER.error("Error getting MeterMate entities: %s", e)
             return []
 
+    def complete_clear_entity_data(self, entity_id: str) -> bool:
+        """Completely clear all data (states and statistics) for an entity."""
+        if not self._validate_recorder_available():
+            return False
 
-# Alias for backward compatibility - use SQLAlchemy implementation
-HistoricalDataHandler = SQLAlchemyHistoricalDataHandler
+        LOGGER.info("Performing complete data clear for %s", entity_id)
+
+        # Clear statistics
+        stats_success = self.clear_statistics_for_entity(entity_id)
+
+        # Clear states (without keeping latest since this is a complete clear)
+        states_success = self.clear_states_for_entity(entity_id, keep_latest=False)
+
+        success = stats_success and states_success
+
+        if success:
+            LOGGER.info("Successfully completed full data clear for %s", entity_id)
+        else:
+            LOGGER.error("Failed to complete full data clear for %s", entity_id)
+
+        return success
+
+    def cleanup_invalid_states(self, entity_id: str) -> bool:
+        """Clean up invalid or problematic states for an entity."""
+        if not self._validate_recorder_available():
+            return False
+
+        try:
+            with session_scope(hass=self.hass) as session:
+                # Find states metadata
+                metadata_stmt = select(StatesMeta).where(
+                    StatesMeta.entity_id == entity_id
+                )
+                metadata = session.execute(metadata_stmt).scalar_one_or_none()
+
+                if not metadata:
+                    LOGGER.debug("No states metadata found for %s", entity_id)
+                    return True
+
+                # Find and delete states with invalid values
+                # (non-numeric, negative for totals, etc.)
+                invalid_conditions = [
+                    # States with null values
+                    States.state.is_(None),
+                    # States with empty string values
+                    States.state == "",
+                    # Add more conditions as needed for invalid states
+                ]
+
+                delete_stmt = delete(States).where(
+                    and_(
+                        States.metadata_id == metadata.metadata_id,
+                        # At least one invalid condition must be true
+                        or_(*invalid_conditions),
+                    )
+                )
+
+                result = session.execute(delete_stmt)
+                deleted_count = result.rowcount
+
+                if deleted_count > 0:
+                    LOGGER.info(
+                        "Cleaned up %d invalid states for %s",
+                        deleted_count,
+                        entity_id,
+                    )
+                else:
+                    LOGGER.debug("No invalid states found for %s", entity_id)
+
+                return True
+
+        except SQLAlchemyError as e:
+            LOGGER.error("Error cleaning up invalid states for %s: %s", entity_id, e)
+            return False
