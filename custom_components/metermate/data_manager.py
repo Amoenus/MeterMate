@@ -1054,3 +1054,69 @@ class MeterMateDataManager:
 
         # Save to storage
         await self.async_save()
+
+    async def rebuild_history(
+        self, entity_id: str, *, complete_wipe: bool = True
+    ) -> OperationResult:
+        """
+        Completely rebuild historical data for an entity.
+
+        This method will:
+        1. Optionally clear all existing historical data
+        2. Calculate consumption for readings that don't have it
+        3. Regenerate historical statistics and states
+        4. Update current sensor values
+
+        Args:
+            entity_id: The entity to rebuild
+            complete_wipe: If True, performs complete data wipe before rebuild
+
+        """
+        try:
+            _LOGGER.info(
+                "Starting %s history rebuild for %s",
+                "complete" if complete_wipe else "incremental",
+                entity_id,
+            )
+
+            # Step 1: Validate database access
+            if not self._historical_handler.validate_database_access():
+                return OperationResult(
+                    success=False,
+                    message="Cannot access Home Assistant database",
+                )
+
+            # Step 2: Perform complete rebuild with optional wipe
+            await self._regenerate_historical_data(
+                entity_id, complete_rebuild=complete_wipe
+            )
+
+            # Step 3: Update statistics for long-term trends
+            await self._update_statistics(entity_id)
+
+            # Step 4: Get readings count for confirmation
+            readings = await self.get_all_readings(entity_id)
+            readings_count = len(readings)
+
+            _LOGGER.info(
+                "Successfully rebuilt history for %s (%d readings processed, mode=%s)",
+                entity_id,
+                readings_count,
+                "complete" if complete_wipe else "incremental",
+            )
+
+            return OperationResult(
+                success=True,
+                message=(
+                    f"History rebuilt successfully "
+                    f"({readings_count} readings processed, "
+                    f"mode={'complete' if complete_wipe else 'incremental'}, "
+                    f"consumption calculations updated)"
+                ),
+            )
+
+        except Exception as err:
+            _LOGGER.exception("Error rebuilding history for %s", entity_id)
+            return OperationResult(
+                success=False, message=f"Failed to rebuild history: {err}"
+            )
