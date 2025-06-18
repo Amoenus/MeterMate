@@ -547,7 +547,7 @@ class MeterMateDataManager:
             entity_name = entity_id.replace("sensor.", "").replace("_", " ").title()
 
             # Use the HistoricalDataHandler to inject the reading as historical data
-            success = self._historical_handler.add_historical_statistic(
+            success = await self._historical_handler.add_historical_statistic(
                 entity_id=entity_id,
                 timestamp=reading.timestamp,
                 value=reading.value,
@@ -740,7 +740,7 @@ class MeterMateDataManager:
         self, entity_id: str, reading: Reading, entity_name: str
     ) -> None:
         """Add meter reading statistics."""
-        success = self._historical_handler.add_historical_statistic(
+        success = await self._historical_handler.add_historical_statistic(
             entity_id=entity_id,
             timestamp=reading.timestamp,
             value=reading.value,
@@ -764,7 +764,7 @@ class MeterMateDataManager:
         consumption_entity_id = f"{entity_id}_consumption"
         consumption_name = f"{entity_name} Consumption"
 
-        consumption_success = self._historical_handler.add_historical_statistic(
+        consumption_success = await self._historical_handler.add_historical_statistic(
             entity_id=consumption_entity_id,
             timestamp=reading.timestamp,
             value=reading.consumption,
