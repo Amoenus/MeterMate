@@ -7,7 +7,7 @@
     "curl@7.88.1",
     "ruff@latest",
     "ffmpeg@4.4.3",
-    "libpcap@latest",
+    "libpcap@1.10.5",
     "gh@latest",
     "fzf@latest"
   ],
