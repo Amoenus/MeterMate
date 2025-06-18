@@ -134,8 +134,11 @@ class HAMeterMatePanel extends HTMLElement {
       }
 
       const confirmed = confirm(
-        "This will rebuild the historical data for the selected meter, " +
-        "cleaning up any state journey and replacing it with proper historical records. " +
+        "This will rebuild the historical data for the selected meter:\n\n" +
+        "• Calculate consumption for readings that don't have it\n" +
+        "• Regenerate meter reading and consumption statistics\n" +
+        "• Clean up and optimize the state journey\n" +
+        "• Replace existing data with proper historical records\n\n" +
         "This action cannot be undone. Continue?"
       );
 
@@ -151,7 +154,7 @@ class HAMeterMatePanel extends HTMLElement {
           entity_id: this._selectedMeter
         });
 
-        this._showAlert("success", "History rebuilt successfully");
+        this._showAlert("success", "History rebuilt successfully with consumption calculations");
 
         // Refresh data to show updated state
         await this._loadData();
@@ -733,7 +736,7 @@ class HAMeterMatePanel extends HTMLElement {
             <button class="refresh-btn" onclick="window.meterMatePanel._refreshMeters()" title="Refresh meters">
               <ha-icon icon="mdi:refresh"></ha-icon>
             </button>
-            <button class="refresh-btn" onclick="window.meterMatePanel._rebuildHistory()" title="Rebuild History - Clean up state journey">
+            <button class="refresh-btn" onclick="window.meterMatePanel._rebuildHistory()" title="Rebuild History - Calculate consumption and clean up data">
               <ha-icon icon="mdi:history"></ha-icon>
             </button>
           </div>

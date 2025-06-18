@@ -583,123 +583,24 @@ class MeterMateDataManager:
             complete_rebuild: If True, performs a complete wipe and rebuild
         """
         try:
-            # Step 1: For complete rebuilds, wipe ALL existing data first
-            if complete_rebuild:
-                _LOGGER.info("Performing complete data wipe for %s", entity_id)
-                clear_success = self._historical_handler.complete_clear_entity_data(
-                    entity_id
-                )
-                if clear_success:
-                    _LOGGER.info(
-                        "Successfully cleared all existing data for %s", entity_id
-                    )
-                else:
-                    _LOGGER.warning("Failed to clear existing data for %s", entity_id)
-            else:
-                # For incremental rebuilds, just clean up invalid states
-                cleanup_success = self._historical_handler.cleanup_invalid_states(
-                    entity_id
-                )
-                if cleanup_success:
-                    _LOGGER.debug("Cleaned up invalid states for %s", entity_id)
+            # Step 1: Handle data clearing based on rebuild type
+            await self._handle_data_clearing(entity_id, complete_rebuild)
 
             # Step 2: Get all readings for the entity
             readings = await self.get_all_readings(entity_id)
-
             if not readings:
                 _LOGGER.debug("No readings to regenerate for %s", entity_id)
                 return
 
-            # Get entity name for display
-            entity_name = entity_id.replace("sensor.", "").replace("_", " ").title()
+            # Step 3: Calculate consumption for readings that don't have it
+            await self._calculate_missing_consumption(entity_id, readings)
 
-            # Step 3: Calculate cumulative values and create historical entries
-            running_total = 0.0
-            last_state_value = None
-            last_state_time = None
-
-            # Sort readings by timestamp to ensure proper order
-            sorted_readings = sorted(readings, key=lambda r: r.timestamp)
-
-            _LOGGER.info(
-                "Regenerating %d readings for %s", len(sorted_readings), entity_id
+            # Step 4: Generate historical data from readings
+            await self._generate_historical_entries(
+                entity_id, readings, complete_rebuild
             )
 
-            # Inject readings as historical data (statistics and states)
-            for i, reading in enumerate(sorted_readings):
-                # Always update statistics (long-term statistics)
-                success = self._historical_handler.add_historical_statistic(
-                    entity_id=entity_id,
-                    timestamp=reading.timestamp,
-                    value=reading.value,
-                    unit=reading.unit,
-                    name=entity_name,
-                )
-
-                if not success:
-                    _LOGGER.warning(
-                        "Failed to regenerate historical statistic for %s: %s at %s",
-                        entity_id,
-                        reading.value,
-                        reading.timestamp,
-                    )
-
-                # Calculate cumulative value for state
-                # All readings are now meter readings (cumulative)
-                running_total = reading.value
-
-                # Determine if we should add this as a state
-                should_add_state = False
-
-                if complete_rebuild:
-                    # For complete rebuilds, add ALL readings as states for full history
-                    should_add_state = True
-                else:
-                    # For incremental rebuilds, only add significant changes
-                    if last_state_value is None:
-                        # First reading
-                        should_add_state = True
-                    elif abs(running_total - last_state_value) >= MINIMUM_STATE_CHANGE:
-                        # Significant value change
-                        should_add_state = True
-                    elif (
-                        last_state_time
-                        and (reading.timestamp - last_state_time).total_seconds()
-                        >= DAILY_STATE_INTERVAL
-                    ):
-                        # At least 24 hours since last state (daily snapshots)
-                        should_add_state = True
-
-                if should_add_state:
-                    state_success = self._historical_handler.add_historical_state(
-                        entity_id=entity_id,
-                        timestamp=reading.timestamp,
-                        value=running_total,
-                        unit=reading.unit,
-                        force_add=True,  # We already filtered, so force add
-                    )
-
-                    if state_success:
-                        last_state_value = running_total
-                        last_state_time = reading.timestamp
-                    else:
-                        _LOGGER.warning(
-                            "Failed to regenerate historical state for %s: %s at %s",
-                            entity_id,
-                            running_total,
-                            reading.timestamp,
-                        )
-
-                # Progress logging for large datasets
-                if (i + 1) % 10 == 0 or (i + 1) == len(sorted_readings):
-                    _LOGGER.debug(
-                        "Progress: %d/%d readings processed for %s",
-                        i + 1,
-                        len(sorted_readings),
-                        entity_id,
-                    )
-
-            # Step 4: Update current sensor value to latest cumulative reading
+            # Step 5: Update current sensor value to latest cumulative reading
             await self._update_sensor_value(entity_id)
 
             _LOGGER.info(
@@ -711,87 +612,194 @@ class MeterMateDataManager:
 
         except Exception:
             _LOGGER.exception("Error regenerating historical data for %s", entity_id)
+            raise
 
-    async def rebuild_history(
-        self, entity_id: str, *, complete_wipe: bool = True
-    ) -> OperationResult:
-        """Completely rebuild historical data for an entity.
-
-        Args:
-            entity_id: The entity to rebuild
-            complete_wipe: If True, performs complete data wipe before rebuild
-        """
-        try:
-            _LOGGER.info(
-                "Starting %s history rebuild for %s",
-                "complete" if complete_wipe else "incremental",
-                entity_id,
-            )
-
-            # Step 1: Validate database access
-            if not self._historical_handler.validate_database_access():
-                return OperationResult(
-                    success=False,
-                    message="Cannot access Home Assistant database",
-                )
-
-            # Step 2: Perform complete rebuild with optional wipe
-            await self._regenerate_historical_data(
-                entity_id, complete_rebuild=complete_wipe
-            )
-
-            # Step 3: Update statistics for long-term trends
-            await self._update_statistics(entity_id)
-
-            # Step 4: Get readings count for confirmation
-            readings = await self.get_all_readings(entity_id)
-            readings_count = len(readings)
-
-            _LOGGER.info(
-                "Successfully rebuilt history for %s (%d readings processed, mode=%s)",
-                entity_id,
-                readings_count,
-                "complete" if complete_wipe else "incremental",
-            )
-
-            return OperationResult(
-                success=True,
-                message=(
-                    f"History rebuilt successfully "
-                    f"({readings_count} readings processed, "
-                    f"mode={'complete' if complete_wipe else 'incremental'})"
-                ),
-            )
-
-        except Exception as err:
-            _LOGGER.exception("Error rebuilding history for %s", entity_id)
-            return OperationResult(
-                success=False, message=f"Failed to rebuild history: {err}"
-            )
-
-    async def _clear_existing_statistics(self, entity_id: str) -> None:
-        """Clear existing statistics and state history for entity before rebuilding."""
-        try:
-            _LOGGER.debug("Clearing existing statistics and states for %s", entity_id)
-
-            # Clear statistics (long-term data)
-            stats_cleared = self._historical_handler.clear_statistics_for_entity(
+    async def _handle_data_clearing(
+        self, entity_id: str, complete_rebuild: bool
+    ) -> None:
+        """Handle data clearing based on rebuild type."""
+        if complete_rebuild:
+            _LOGGER.info("Performing complete data wipe for %s", entity_id)
+            clear_success = self._historical_handler.complete_clear_entity_data(
                 entity_id
             )
-            if not stats_cleared:
-                _LOGGER.warning("Failed to clear statistics for %s", entity_id)
+            if clear_success:
+                _LOGGER.info("Successfully cleared all existing data for %s", entity_id)
+            else:
+                _LOGGER.warning("Failed to clear existing data for %s", entity_id)
+        else:
+            # For incremental rebuilds, just clean up invalid states
+            cleanup_success = self._historical_handler.cleanup_invalid_states(entity_id)
+            if cleanup_success:
+                _LOGGER.debug("Cleaned up invalid states for %s", entity_id)
 
-            # Clear state history (journey data) but keep the latest state
-            states_cleared = self._historical_handler.clear_states_for_entity(
-                entity_id, keep_latest=True
+    async def _calculate_missing_consumption(
+        self, entity_id: str, readings: list[Reading]
+    ) -> bool:
+        """Calculate consumption for readings that don't have it."""
+        sorted_readings = sorted(readings, key=lambda r: r.timestamp)
+        readings_updated = False
+        previous_reading = None
+
+        for reading in sorted_readings:
+            if reading.consumption is None and previous_reading is not None:
+                # Calculate consumption from previous reading
+                consumption = reading.value - previous_reading.value
+                period_start = previous_reading.timestamp
+
+                # Update the reading with consumption data
+                reading.consumption = consumption
+                reading.period_start = period_start
+                reading.period_end = reading.timestamp
+                readings_updated = True
+
+                _LOGGER.debug(
+                    "Calculated consumption for reading %s: %s %s",
+                    reading.id,
+                    consumption,
+                    reading.unit,
+                )
+
+            previous_reading = reading
+
+        # Save updated readings if we calculated new consumption values
+        if readings_updated:
+            await self.async_save()
+            _LOGGER.info(
+                "Updated %d readings with consumption calculations",
+                len(sorted_readings),
             )
-            if not states_cleared:
-                _LOGGER.warning("Failed to clear state history for %s", entity_id)
 
-            _LOGGER.info("Cleared existing data for %s", entity_id)
+        return readings_updated
 
-        except Exception:
-            _LOGGER.exception("Error clearing existing statistics for %s", entity_id)
+    async def _generate_historical_entries(
+        self, entity_id: str, readings: list[Reading], complete_rebuild: bool
+    ) -> None:
+        """Generate historical entries from readings."""
+        sorted_readings = sorted(readings, key=lambda r: r.timestamp)
+        entity_name = entity_id.replace("sensor.", "").replace("_", " ").title()
+        last_state_value = None
+        last_state_time = None
+
+        _LOGGER.info(
+            "Generating historical entries for %d readings for %s",
+            len(sorted_readings),
+            entity_id,
+        )
+
+        for i, reading in enumerate(sorted_readings):
+            # Add meter reading statistics
+            await self._add_reading_statistics(entity_id, reading, entity_name)
+
+            # Add consumption statistics if available
+            if reading.consumption is not None and reading.consumption > 0:
+                await self._add_consumption_statistics(entity_id, reading, entity_name)
+
+            # Determine if we should add this as a state
+            should_add_state = self._should_add_state(
+                reading,
+                complete_rebuild=complete_rebuild,
+                last_state_value=last_state_value,
+                last_state_time=last_state_time,
+            )
+
+            if should_add_state:
+                state_success = self._historical_handler.add_historical_state(
+                    entity_id=entity_id,
+                    timestamp=reading.timestamp,
+                    value=reading.value,
+                    unit=reading.unit,
+                    force_add=True,
+                )
+
+                if state_success:
+                    last_state_value = reading.value
+                    last_state_time = reading.timestamp
+                else:
+                    _LOGGER.warning(
+                        "Failed to regenerate historical state for entity %s",
+                        entity_id,
+                    )
+
+            # Progress logging for large datasets
+            if (i + 1) % 10 == 0 or (i + 1) == len(sorted_readings):
+                _LOGGER.debug(
+                    "Progress: %d/%d readings processed for %s",
+                    i + 1,
+                    len(sorted_readings),
+                    entity_id,
+                )
+
+    async def _add_reading_statistics(
+        self, entity_id: str, reading: Reading, entity_name: str
+    ) -> None:
+        """Add meter reading statistics."""
+        success = self._historical_handler.add_historical_statistic(
+            entity_id=entity_id,
+            timestamp=reading.timestamp,
+            value=reading.value,
+            unit=reading.unit,
+            name=entity_name,
+        )
+
+        if not success:
+            _LOGGER.warning(
+                "Failed to regenerate historical statistic for %s",
+                entity_id,
+            )
+
+    async def _add_consumption_statistics(
+        self, entity_id: str, reading: Reading, entity_name: str
+    ) -> None:
+        """Add consumption statistics."""
+        if reading.consumption is None:
+            return
+
+        consumption_entity_id = f"{entity_id}_consumption"
+        consumption_name = f"{entity_name} Consumption"
+
+        consumption_success = self._historical_handler.add_historical_statistic(
+            entity_id=consumption_entity_id,
+            timestamp=reading.timestamp,
+            value=reading.consumption,
+            unit=reading.unit,
+            name=consumption_name,
+        )
+
+        if not consumption_success:
+            _LOGGER.warning(
+                "Failed to regenerate consumption statistic for %s",
+                consumption_entity_id,
+            )
+
+    def _should_add_state(
+        self,
+        reading: Reading,
+        *,
+        complete_rebuild: bool,
+        last_state_value: float | None,
+        last_state_time: datetime | None,
+    ) -> bool:
+        """Determine if a reading should be added as a state."""
+        if complete_rebuild:
+            # For complete rebuilds, add ALL readings as states for full history
+            return True
+
+        # For incremental rebuilds, only add significant changes
+        if last_state_value is None:
+            # First reading
+            return True
+
+        if abs(reading.value - last_state_value) >= MINIMUM_STATE_CHANGE:
+            # Significant value change
+            return True
+
+        # At least 24 hours since last state (daily snapshots)
+        return (
+            last_state_time is not None
+            and (reading.timestamp - last_state_time).total_seconds()
+            >= DAILY_STATE_INTERVAL
+        )
 
     # New methods for enhanced reading management
 
