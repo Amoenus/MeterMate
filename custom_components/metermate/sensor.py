@@ -11,7 +11,13 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import CONF_DEVICE_CLASS, CONF_NAME, CONF_UNIT_OF_MEASUREMENT
+from homeassistant.const import (
+    CONF_DEVICE_CLASS,
+    CONF_NAME,
+    CONF_UNIT_OF_MEASUREMENT,
+    UnitOfEnergy,
+    UnitOfVolume,
+)
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import ATTR_INTEGRATION_NAME, CONF_INITIAL_READING
@@ -73,20 +79,20 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
 
         # Set default unit based on device class if not provided
         if not unit:
-            if device_class_str == "energy":
-                unit = "kWh"
-            elif device_class_str == "gas":
-                unit = "m³"
-            elif device_class_str == "water":
-                unit = "L"
+            if device_class_str == SensorDeviceClass.ENERGY:
+                unit = UnitOfEnergy.KILO_WATT_HOUR
+            elif device_class_str == SensorDeviceClass.GAS:
+                unit = UnitOfVolume.CUBIC_METERS
+            elif device_class_str == SensorDeviceClass.WATER:
+                unit = UnitOfVolume.LITERS
             else:
-                unit = "kWh"  # Default fallback
+                unit = UnitOfEnergy.KILO_WATT_HOUR  # Default fallback
 
         _LOGGER.debug("Sensor init - final unit: %s", unit)
 
         # Ensure unit is not None
         if unit is None:
-            unit = "kWh"
+            unit = UnitOfEnergy.KILO_WATT_HOUR
 
         self._attr_native_unit_of_measurement = unit
         if device_class_str:
