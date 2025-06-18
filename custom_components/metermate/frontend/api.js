@@ -173,18 +173,35 @@ window.MeterMateAPI = (function() {
       }
     }
 
-    // Update an existing reading
-    async updateReading(entityId, readingId, value, timestamp, notes) {
+    // Update a meter reading specifically
+    async updateMeterReading(entityId, readingId, meterReading, timestamp, notes) {
       try {
-        await this.hass.callService("metermate", "update_reading", {
+        await this.hass.callService("metermate", "update_meter_reading", {
           entity_id: entityId,
           reading_id: readingId,
-          value: parseFloat(value),
+          meter_reading: parseFloat(meterReading),
           timestamp: timestamp || undefined,
           notes: notes || undefined
         });
       } catch (error) {
-        console.error("Error updating reading:", error);
+        console.error("Error updating meter reading:", error);
+        throw error;
+      }
+    }
+
+    // Update a consumption period specifically
+    async updateConsumptionPeriod(entityId, readingId, consumption, periodStart, periodEnd, notes) {
+      try {
+        await this.hass.callService("metermate", "update_consumption_period", {
+          entity_id: entityId,
+          reading_id: readingId,
+          consumption: parseFloat(consumption),
+          period_start: periodStart,
+          period_end: periodEnd,
+          notes: notes || undefined
+        });
+      } catch (error) {
+        console.error("Error updating consumption period:", error);
         throw error;
       }
     }

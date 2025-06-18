@@ -295,13 +295,28 @@ class HAMeterMatePanel extends HTMLElement {
       if (!this._editingReading) return;
 
       try {
-        await this._api.updateReading(
-          this._editingReading.meter_id,
-          this._editingReading.id,
-          parseFloat(formData.get("value")),
-          formData.get("datetime"),
-          formData.get("notes") || ""
-        );
+        const isConsumptionPeriod = this._editingReading.period_start && this._editingReading.period_end;
+
+        if (isConsumptionPeriod) {
+          // Update consumption period
+          await this._api.updateConsumptionPeriod(
+            this._editingReading.meter_id,
+            this._editingReading.id,
+            parseFloat(formData.get("consumption")),
+            formData.get("period_start"),
+            formData.get("period_end"),
+            formData.get("notes") || ""
+          );
+        } else {
+          // Update meter reading
+          await this._api.updateMeterReading(
+            this._editingReading.meter_id,
+            this._editingReading.id,
+            parseFloat(formData.get("value")),
+            formData.get("datetime"),
+            formData.get("notes") || ""
+          );
+        }
 
         this._showAlert("success", "Reading updated successfully");
         this._closeEditDialog();
@@ -928,33 +943,62 @@ class HAMeterMatePanel extends HTMLElement {
     _renderEditDialog() {
       if (!this._editingReading) return '';
 
+      const isConsumptionPeriod = this._editingReading.period_start && this._editingReading.period_end;
+
       return `
         <div class="dialog-overlay" onclick="event.target === this && window.meterMatePanel._closeEditDialog()">
           <div class="dialog">
             <div class="dialog-header">
-              <h3>Edit Reading</h3>
+              <h3>Edit ${isConsumptionPeriod ? 'Consumption Period' : 'Meter Reading'}</h3>
             </div>
             <form onsubmit="window.meterMatePanel._handleEditReading(event)">
               <div class="dialog-content">
-                <div class="form-field">
-                  <label for="edit-value">Reading Value</label>
-                  <input id="edit-value" name="value" type="number" step="0.01" value="${this._editingReading.value}" required autofocus>
-                </div>
-                <div class="form-field">
-                  <label for="edit-datetime">Date & Time</label>
-                  <input id="edit-datetime" name="datetime" type="datetime-local" value="${new Date(this._editingReading.timestamp).toISOString().slice(0, 16)}" required>
-                </div>
-                <div class="form-field">
-                  <label for="edit-notes">Notes (optional)</label>
-                  <input id="edit-notes" name="notes" type="text" value="${this._editingReading.notes || ''}">
-                </div>
+                ${isConsumptionPeriod ? this._renderConsumptionPeriodFields() : this._renderMeterReadingFields()}
               </div>
               <div class="dialog-actions">
                 <button type="button" class="btn btn-secondary" onclick="window.meterMatePanel._closeEditDialog()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Update Reading</button>
+                <button type="submit" class="btn btn-primary">Update ${isConsumptionPeriod ? 'Consumption Period' : 'Reading'}</button>
               </div>
             </form>
           </div>
+        </div>
+      `;
+    }
+
+    _renderMeterReadingFields() {
+      return `
+        <div class="form-field">
+          <label for="edit-value">Meter Reading</label>
+          <input id="edit-value" name="value" type="number" step="0.01" value="${this._editingReading.value}" required autofocus>
+        </div>
+        <div class="form-field">
+          <label for="edit-datetime">Date & Time</label>
+          <input id="edit-datetime" name="datetime" type="datetime-local" value="${new Date(this._editingReading.timestamp).toISOString().slice(0, 16)}" required>
+        </div>
+        <div class="form-field">
+          <label for="edit-notes">Notes (optional)</label>
+          <input id="edit-notes" name="notes" type="text" value="${this._editingReading.notes || ''}">
+        </div>
+      `;
+    }
+
+    _renderConsumptionPeriodFields() {
+      return `
+        <div class="form-field">
+          <label for="edit-consumption">Consumption Amount</label>
+          <input id="edit-consumption" name="consumption" type="number" step="0.01" value="${this._editingReading.consumption || this._editingReading.value}" required autofocus>
+        </div>
+        <div class="form-field">
+          <label for="edit-period-start">Period Start</label>
+          <input id="edit-period-start" name="period_start" type="datetime-local" value="${new Date(this._editingReading.period_start).toISOString().slice(0, 16)}" required>
+        </div>
+        <div class="form-field">
+          <label for="edit-period-end">Period End</label>
+          <input id="edit-period-end" name="period_end" type="datetime-local" value="${new Date(this._editingReading.period_end).toISOString().slice(0, 16)}" required>
+        </div>
+        <div class="form-field">
+          <label for="edit-notes">Notes (optional)</label>
+          <input id="edit-notes" name="notes" type="text" value="${this._editingReading.notes || ''}">
         </div>
       `;
     }
