@@ -1,4 +1,4 @@
-"""Services for MeterMate integration using the new data management interface."""
+"""Support for MeterMate services."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
+
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
@@ -160,7 +161,7 @@ class MeterMateServices:
 
     async def async_register_services(self) -> None:
         """Register all MeterMate services."""
-        _LOGGER.info("Registering MeterMate services")
+        _LOGGER.debug("Registering MeterMate services")
 
         # Register add_reading service
         self.hass.services.async_register(
@@ -249,7 +250,7 @@ class MeterMateServices:
             schema=SERVICE_UPDATE_CONSUMPTION_PERIOD_SCHEMA,
         )
 
-        _LOGGER.info("MeterMate services registered successfully")
+        _LOGGER.debug("MeterMate services registered successfully")
 
     async def async_unregister_services(self) -> None:
         """Unregister all MeterMate services."""
@@ -270,7 +271,7 @@ class MeterMateServices:
         for service in services_to_remove:
             self.hass.services.async_remove(DOMAIN, service)
 
-        _LOGGER.info("MeterMate services unregistered")
+        _LOGGER.debug("MeterMate services unregistered")
 
     async def _handle_add_reading(self, call: ServiceCall) -> None:
         """Handle add_reading service call."""
