@@ -13,6 +13,7 @@ ATTR_MODE = "mode"
 ATTR_START_DATE = "start_date"
 ATTR_TIMESTAMP = "timestamp"
 ATTR_VALUE = "value"
+ATTR_NOTES = "notes"
 
 # Configuration (alphabetical order)
 CONF_INITIAL_READING = "initial_reading"

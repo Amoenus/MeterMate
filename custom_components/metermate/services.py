@@ -7,12 +7,21 @@ from typing import TYPE_CHECKING
 
 import voluptuous as vol
 
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import (
+    ATTR_END_DATE,
+    ATTR_ENTITY_ID,
+    ATTR_NOTES,
+    ATTR_START_DATE,
+    ATTR_TIMESTAMP,
+    ATTR_VALUE,
+    DOMAIN,
+)
 from .data_manager import MeterMateDataManager, TimePeriod
 from .models import Reading
 
@@ -39,35 +48,35 @@ SERVICE_UPDATE_CONSUMPTION_PERIOD = "update_consumption_period"
 # Service schemas
 SERVICE_ADD_READING_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required("value"): vol.Coerce(float),
         vol.Optional("timestamp"): cv.datetime,
-        vol.Optional("unit", default="kWh"): cv.string,
-        vol.Optional("notes"): cv.string,
+        vol.Optional(ATTR_UNIT_OF_MEASUREMENT, default="kWh"): cv.string,
+        vol.Optional(ATTR_NOTES): cv.string,
     }
 )
 
 SERVICE_UPDATE_READING_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required("reading_id"): cv.string,
         vol.Required("meter_reading"): vol.Coerce(float),
         vol.Optional("timestamp"): cv.datetime,
-        vol.Optional("unit", default="kWh"): cv.string,
-        vol.Optional("notes", default=""): cv.string,
+        vol.Optional(ATTR_UNIT_OF_MEASUREMENT, default="kWh"): cv.string,
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
     }
 )
 
 SERVICE_DELETE_READING_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required("reading_id"): cv.string,
     }
 )
 
 SERVICE_GET_READINGS_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Optional("start_date"): cv.datetime,
         vol.Optional("end_date"): cv.datetime,
     }
@@ -75,7 +84,7 @@ SERVICE_GET_READINGS_SCHEMA = vol.Schema(
 
 SERVICE_BULK_IMPORT_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required("readings"): vol.All(
             cv.ensure_list,
             [
@@ -83,8 +92,10 @@ SERVICE_BULK_IMPORT_SCHEMA = vol.Schema(
                     {
                         vol.Required("timestamp"): cv.datetime,
                         vol.Required("value"): vol.Coerce(float),
-                        vol.Optional("unit", default="kWh"): cv.string,
-                        vol.Optional("notes"): cv.string,
+                        vol.Optional(
+                            ATTR_UNIT_OF_MEASUREMENT, default="kWh"
+                        ): cv.string,
+                        vol.Optional(ATTR_NOTES): cv.string,
                     }
                 )
             ],
@@ -94,13 +105,13 @@ SERVICE_BULK_IMPORT_SCHEMA = vol.Schema(
 
 SERVICE_RECALCULATE_STATISTICS_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
     }
 )
 
 SERVICE_REBUILD_HISTORY_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Optional("complete_wipe", default=True): cv.boolean,
     }
 )
@@ -108,45 +119,45 @@ SERVICE_REBUILD_HISTORY_SCHEMA = vol.Schema(
 # New service schemas
 SERVICE_ADD_METER_READING_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required("meter_reading"): vol.Coerce(float),
         vol.Optional("timestamp"): cv.datetime,
-        vol.Optional("unit", default="kWh"): cv.string,
-        vol.Optional("notes", default=""): cv.string,
+        vol.Optional(ATTR_UNIT_OF_MEASUREMENT, default="kWh"): cv.string,
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
     }
 )
 
 SERVICE_ADD_CONSUMPTION_PERIOD_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required("consumption"): vol.Coerce(float),
         vol.Required("period_start"): cv.datetime,
         vol.Required("period_end"): cv.datetime,
-        vol.Optional("unit", default="kWh"): cv.string,
-        vol.Optional("notes", default=""): cv.string,
+        vol.Optional(ATTR_UNIT_OF_MEASUREMENT, default="kWh"): cv.string,
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
     }
 )
 
 SERVICE_UPDATE_METER_READING_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required("reading_id"): cv.string,
         vol.Required("meter_reading"): vol.Coerce(float),
         vol.Optional("timestamp"): cv.datetime,
-        vol.Optional("unit", default="kWh"): cv.string,
-        vol.Optional("notes", default=""): cv.string,
+        vol.Optional(ATTR_UNIT_OF_MEASUREMENT, default="kWh"): cv.string,
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
     }
 )
 
 SERVICE_UPDATE_CONSUMPTION_PERIOD_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_id,
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required("reading_id"): cv.string,
         vol.Required("consumption"): vol.Coerce(float),
         vol.Required("period_start"): cv.datetime,
         vol.Required("period_end"): cv.datetime,
-        vol.Optional("unit", default="kWh"): cv.string,
-        vol.Optional("notes", default=""): cv.string,
+        vol.Optional(ATTR_UNIT_OF_MEASUREMENT, default="kWh"): cv.string,
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
     }
 )
 
@@ -275,11 +286,11 @@ class MeterMateServices:
 
     async def _handle_add_reading(self, call: ServiceCall) -> None:
         """Handle add_reading service call."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         value = call.data["value"]
         timestamp = call.data.get("timestamp", dt_util.utcnow())
-        unit = call.data.get("unit", "kWh")
-        notes = call.data.get("notes")
+        unit = call.data.get(ATTR_UNIT_OF_MEASUREMENT, "kWh")
+        notes = call.data.get(ATTR_NOTES)
 
         # Ensure timestamp is timezone-aware
         if timestamp is not None:
@@ -313,12 +324,12 @@ class MeterMateServices:
 
     async def _handle_update_reading(self, call: ServiceCall) -> None:
         """Handle update_reading service call."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         reading_id = call.data["reading_id"]
         meter_reading = call.data["meter_reading"]
         timestamp = call.data.get("timestamp", dt_util.utcnow())
-        unit = call.data.get("unit", "kWh")
-        notes = call.data.get("notes", "")
+        unit = call.data.get(ATTR_UNIT_OF_MEASUREMENT, "kWh")
+        notes = call.data.get(ATTR_NOTES, "")
 
         # Ensure timestamp is timezone-aware
         if timestamp is not None:
@@ -353,7 +364,7 @@ class MeterMateServices:
 
     async def _handle_delete_reading(self, call: ServiceCall) -> None:
         """Handle delete_reading service call."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         reading_id = call.data["reading_id"]
 
         # Delete the reading
@@ -380,7 +391,7 @@ class MeterMateServices:
         _LOGGER.info("Call data: %s", call.data)
 
         # Try to get entity_id from data
-        entity_id = call.data.get("entity_id")
+        entity_id = call.data.get(ATTR_ENTITY_ID)
 
         if not entity_id:
             error_msg = "entity_id is required"
@@ -418,8 +429,8 @@ class MeterMateServices:
                 "id": reading.id,
                 "timestamp": reading.timestamp.isoformat(),
                 "value": reading.value,
-                "unit": reading.unit,
-                "notes": reading.notes,
+                ATTR_UNIT_OF_MEASUREMENT: reading.unit,
+                ATTR_NOTES: reading.notes,
                 "period_start": (
                     reading.period_start.isoformat() if reading.period_start else None
                 ),
@@ -444,7 +455,7 @@ class MeterMateServices:
 
     async def _handle_bulk_import(self, call: ServiceCall) -> None:
         """Handle bulk_import service call."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         readings_data = call.data["readings"]
 
         # Convert readings data to Reading objects
@@ -459,8 +470,8 @@ class MeterMateServices:
             reading = Reading(
                 timestamp=timestamp,
                 value=reading_data["value"],
-                unit=reading_data.get("unit", "kWh"),
-                notes=reading_data.get("notes"),
+                unit=reading_data.get(ATTR_UNIT_OF_MEASUREMENT, "kWh"),
+                notes=reading_data.get(ATTR_NOTES),
             )
             readings.append(reading)
 
@@ -479,7 +490,7 @@ class MeterMateServices:
 
     async def _handle_recalculate_statistics(self, call: ServiceCall) -> None:
         """Handle recalculate_statistics service call."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
 
         # Recalculate statistics
         result = await self.data_manager.recalculate_statistics(entity_id)
@@ -498,7 +509,7 @@ class MeterMateServices:
 
     async def _handle_rebuild_history(self, call: ServiceCall) -> None:
         """Handle rebuild_history service call."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         complete_wipe = call.data.get("complete_wipe", True)
 
         _LOGGER.info(
@@ -527,11 +538,11 @@ class MeterMateServices:
 
     async def _handle_add_meter_reading(self, call: ServiceCall) -> None:
         """Add a meter reading and calculate consumption."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         meter_reading = call.data["meter_reading"]
         timestamp = call.data.get("timestamp", dt_util.utcnow())
-        notes = call.data.get("notes", "")
-        unit = call.data.get("unit", "kWh")
+        notes = call.data.get(ATTR_NOTES, "")
+        unit = call.data.get(ATTR_UNIT_OF_MEASUREMENT, "kWh")
 
         def _raise_error(message: str) -> None:
             """Raise a HomeAssistantError with the given message."""
@@ -567,12 +578,12 @@ class MeterMateServices:
 
     async def _handle_add_consumption_period(self, call: ServiceCall) -> None:
         """Add consumption for a period and calculate ending meter reading."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         consumption = call.data["consumption"]
         period_start = call.data["period_start"]
         period_end = call.data["period_end"]
-        notes = call.data.get("notes", "")
-        unit = call.data.get("unit", "kWh")
+        notes = call.data.get(ATTR_NOTES, "")
+        unit = call.data.get(ATTR_UNIT_OF_MEASUREMENT, "kWh")
 
         def _raise_error(message: str) -> None:
             """Raise a HomeAssistantError with the given message."""
@@ -611,12 +622,12 @@ class MeterMateServices:
 
     async def _handle_update_meter_reading(self, call: ServiceCall) -> None:
         """Handle update_meter_reading service call."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         reading_id = call.data["reading_id"]
         meter_reading = call.data["meter_reading"]
         timestamp = call.data.get("timestamp", dt_util.utcnow())
-        unit = call.data.get("unit", "kWh")
-        notes = call.data.get("notes", "")
+        unit = call.data.get(ATTR_UNIT_OF_MEASUREMENT, "kWh")
+        notes = call.data.get(ATTR_NOTES, "")
 
         # Ensure timestamp is timezone-aware
         if timestamp is not None:
@@ -651,13 +662,13 @@ class MeterMateServices:
 
     async def _handle_update_consumption_period(self, call: ServiceCall) -> None:
         """Handle update_consumption_period service call."""
-        entity_id = call.data["entity_id"]
+        entity_id = call.data[ATTR_ENTITY_ID]
         reading_id = call.data["reading_id"]
         consumption = call.data["consumption"]
         period_start = call.data["period_start"]
         period_end = call.data["period_end"]
-        unit = call.data.get("unit", "kWh")
-        notes = call.data.get("notes", "")
+        unit = call.data.get(ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy.KILO_WATT_HOUR)
+        notes = call.data.get(ATTR_NOTES, "")
 
         # Ensure timestamps are timezone-aware
         period_start = dt_util.as_utc(period_start)

@@ -7,7 +7,10 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
 from homeassistant.util import dt as dt_util
+
+from .const import ATTR_NOTES
 
 
 @dataclass
@@ -16,7 +19,7 @@ class Reading:
 
     timestamp: datetime
     value: float
-    unit: str = "kWh"
+    unit: str = UnitOfEnergy.KILO_WATT_HOUR
     notes: str | None = None
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: datetime = field(default_factory=dt_util.utcnow)
@@ -32,8 +35,8 @@ class Reading:
             "id": self.id,
             "timestamp": self.timestamp.isoformat(),
             "value": self.value,
-            "unit": self.unit,
-            "notes": self.notes,
+            ATTR_UNIT_OF_MEASUREMENT: self.unit,
+            ATTR_NOTES: self.notes,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "period_start": (
@@ -50,7 +53,7 @@ class Reading:
             id=data["id"],
             timestamp=dt_util.as_utc(datetime.fromisoformat(data["timestamp"])),
             value=data["value"],
-            unit=data.get("unit", "kWh"),
+            unit=data.get(ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy.KILO_WATT_HOUR),
             notes=data.get("notes"),
             created_at=dt_util.as_utc(datetime.fromisoformat(data["created_at"])),
             updated_at=(
