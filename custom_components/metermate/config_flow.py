@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Config flow for MeterMate."""
+"""Support for MeterMate config flow."""
 
 from __future__ import annotations
 
 import voluptuous as vol
+
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.helpers import selector
