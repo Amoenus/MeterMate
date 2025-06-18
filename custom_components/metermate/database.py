@@ -1,12 +1,21 @@
-"""Database operations for MeterMate integration."""
+"""SQLAlchemy-based database operations for MeterMate integration."""
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from typing import TYPE_CHECKING
 
-from homeassistant.helpers.recorder import get_instance
+from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy.exc import SQLAlchemyError
+
+from homeassistant.components.recorder.db_schema import (
+    States,
+    StatesMeta,
+    Statistics,
+    StatisticsMeta,
+    StatisticsShortTerm,
+)
+from homeassistant.helpers.recorder import get_instance, session_scope
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, LOGGER
@@ -14,87 +23,95 @@ from .const import DOMAIN, LOGGER
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from sqlalchemy.orm import Session
+
     from homeassistant.core import HomeAssistant
 
 # Constants
 SHORT_TERM_STATISTICS_DAYS = 10
-# Threshold for considering values as "same" (0.001)
 VALUE_DIFFERENCE_THRESHOLD = 0.001
-# Time threshold for considering readings as too close (1 hour in seconds)
 TIME_DIFFERENCE_THRESHOLD = 3600
 
 
-class HistoricalDataHandler:
-    """Handle historical data insertion into Home Assistant database."""
+class SQLAlchemyHistoricalDataHandler:
+    """Handle historical data insertion using Home Assistant's SQLAlchemy models."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the handler."""
         self.hass = hass
         self.recorder = get_instance(hass)
 
-    def _get_database_path(self) -> str | None:
-        """Get the path to the Home Assistant database."""
-        if not self.recorder or not self.recorder.db_url:
-            LOGGER.error("Cannot access recorder database")
-            return None
+    def _validate_recorder_available(self) -> bool:
+        """Validate that recorder is available."""
+        if not self.recorder:
+            LOGGER.error("Recorder instance not available")
+            return False
+        return True
 
-        # Extract SQLite database path from URL
-        if self.recorder.db_url.startswith("sqlite:///"):
-            return self.recorder.db_url[10:]  # Remove 'sqlite:///' prefix
-
-        LOGGER.error("Only SQLite databases are supported for historical data import")
-        return None
-
-    def _get_or_create_metadata_id(
+    def _get_or_create_statistics_metadata(
         self,
-        conn: sqlite3.Connection,
+        session: Session,
         statistic_id: str,
         unit: str,
         name: str,
         source: str = DOMAIN,
-    ) -> int | None:
-        """Get or create metadata entry and return its ID."""
+    ) -> StatisticsMeta | None:
+        """Get or create statistics metadata using SQLAlchemy."""
         try:
-            # Check if metadata exists
-            cursor = conn.execute(
-                "SELECT id FROM statistics_meta WHERE statistic_id = ? AND source = ?",
-                (statistic_id, source),
+            # Try to find existing metadata
+            stmt = select(StatisticsMeta).where(
+                and_(
+                    StatisticsMeta.statistic_id == statistic_id,
+                    StatisticsMeta.source == source,
+                )
             )
-            result = cursor.fetchone()
+            metadata = session.execute(stmt).scalar_one_or_none()
 
-            if result:
-                return result[0]
+            if metadata:
+                return metadata
 
-            # Create new metadata entry
-            cursor = conn.execute(
-                """INSERT INTO statistics_meta
-                   (statistic_id, source, unit_of_measurement,
-                    has_mean, has_sum, name)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (statistic_id, source, unit, False, True, name),
+            # Create new metadata
+            metadata = StatisticsMeta(
+                statistic_id=statistic_id,
+                source=source,
+                unit_of_measurement=unit,
+                has_mean=False,
+                has_sum=True,
+                name=name,
             )
-            return cursor.lastrowid  # noqa: TRY300
+            session.add(metadata)
+            session.flush()  # Get the ID
+            return metadata
 
-        except sqlite3.Error as e:
+        except SQLAlchemyError as e:
             LOGGER.error("Error managing statistics metadata: %s", e)
             return None
 
-    def _timestamp_exists(
-        self, conn: sqlite3.Connection, metadata_id: int, timestamp: float
-    ) -> bool:
-        """Check if a statistic already exists for the given timestamp."""
+    def _get_or_create_states_metadata(
+        self,
+        session: Session,
+        entity_id: str,
+    ) -> StatesMeta | None:
+        """Get or create states metadata using SQLAlchemy."""
         try:
-            cursor = conn.execute(
-                "SELECT COUNT(*) FROM statistics "
-                "WHERE metadata_id = ? AND start_ts = ?",
-                (metadata_id, timestamp),
-            )
-            return cursor.fetchone()[0] > 0
-        except sqlite3.Error as e:
-            LOGGER.error("Error checking timestamp existence: %s", e)
-            return True  # Assume exists to prevent duplicates
+            # Try to find existing metadata
+            stmt = select(StatesMeta).where(StatesMeta.entity_id == entity_id)
+            metadata = session.execute(stmt).scalar_one_or_none()
 
-    def add_historical_statistic(
+            if metadata:
+                return metadata
+
+            # Create new metadata
+            metadata = StatesMeta(entity_id=entity_id)
+            session.add(metadata)
+            session.flush()  # Get the ID
+            return metadata
+
+        except SQLAlchemyError as e:
+            LOGGER.error("Error managing states metadata: %s", e)
+            return None
+
+    async def add_historical_statistic(
         self,
         entity_id: str,
         timestamp: datetime,
@@ -102,108 +119,126 @@ class HistoricalDataHandler:
         unit: str,
         name: str,
     ) -> bool:
-        """Add a historical statistic directly to the database."""
-        db_path = self._get_database_path()
-        if not db_path:
+        """Add a historical statistic using SQLAlchemy."""
+        if not self._validate_recorder_available():
             return False
 
-        # Convert timestamp to Unix epoch
-        unix_timestamp = timestamp.timestamp()
+        def _add_statistic_sync() -> bool:
+            unix_timestamp = timestamp.timestamp()
+            statistic_id = entity_id
 
-        # For historical data, use the original entity_id to integrate
-        # with Home Assistant's recorder statistics
-        # This ensures historical data appears in the Energy Dashboard
-        statistic_id = entity_id
+            try:
+                with session_scope(hass=self.hass) as session:
+                    # Get or create metadata
+                    metadata = self._get_or_create_statistics_metadata(
+                        session, statistic_id, unit, name
+                    )
+                    if not metadata:
+                        return False
 
-        conn = None
-        try:
-            # Connect to database
-            conn = sqlite3.connect(db_path)
-            conn.execute("BEGIN TRANSACTION")
+                    current_ts = time.time()
 
-            # Get or create metadata - use 'recorder' as source
-            # to match Home Assistant's native statistics
-            metadata_id = self._get_or_create_metadata_id(
-                conn, statistic_id, unit, name, source="recorder"
-            )
+                    # Check if statistic already exists
+                    existing_stmt = select(Statistics).where(
+                        and_(
+                            Statistics.metadata_id == metadata.id,
+                            Statistics.start_ts == unix_timestamp,
+                        )
+                    )
+                    existing = session.execute(existing_stmt).scalar_one_or_none()
 
-            if not metadata_id:
-                conn.rollback()
+                    if existing:
+                        # Update existing statistic
+                        existing.state = value
+                        existing.sum = value
+                        existing.created_ts = current_ts
+                        LOGGER.info(
+                            "Updated existing statistic for %s at %s with value %s",
+                            entity_id,
+                            timestamp,
+                            value,
+                        )
+                    else:
+                        # Create new statistic
+                        statistic = Statistics(
+                            metadata_id=metadata.id,
+                            start_ts=unix_timestamp,
+                            state=value,
+                            sum=value,
+                            created_ts=current_ts,
+                        )
+                        session.add(statistic)
+                        LOGGER.info(
+                            "Added new historical statistic for %s: %s at %s",
+                            entity_id,
+                            value,
+                            timestamp,
+                        )
+
+                    # Handle short-term statistics if recent enough
+                    days_ago = (dt_util.now().timestamp() - unix_timestamp) / (
+                        24 * 3600
+                    )
+                    if days_ago <= SHORT_TERM_STATISTICS_DAYS:
+                        self._add_short_term_statistic(
+                            session, metadata.id, unix_timestamp, value, current_ts
+                        )
+
+                    return True
+
+            except SQLAlchemyError as e:
+                LOGGER.error(
+                    "SQLAlchemy error adding historical statistic for %s: %s",
+                    entity_id,
+                    e,
+                )
+                return False
+            except (ValueError, TypeError, AttributeError) as e:
+                LOGGER.error(
+                    "Data error adding historical statistic for %s: %s", entity_id, e
+                )
                 return False
 
-            # Check if data already exists for this timestamp
-            exists = self._timestamp_exists(conn, metadata_id, unix_timestamp)
-            if exists:
-                LOGGER.info(
-                    "Statistic already exists for %s at %s, updating with new value %s",
-                    entity_id,
-                    timestamp,
-                    value,
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(_add_statistic_sync)
+
+    def _add_short_term_statistic(
+        self,
+        session: Session,
+        metadata_id: int,
+        timestamp: float,
+        value: float,
+        created_ts: float,
+    ) -> None:
+        """Add short-term statistic if table exists."""
+        try:
+            # Check if record exists
+            existing_stmt = select(StatisticsShortTerm).where(
+                and_(
+                    StatisticsShortTerm.metadata_id == metadata_id,
+                    StatisticsShortTerm.start_ts == timestamp,
                 )
-                # Update existing statistic
-                current_ts = time.time()
-                conn.execute(
-                    """UPDATE statistics
-                       SET state = ?, sum = ?, created_ts = ?
-                       WHERE metadata_id = ? AND start_ts = ?""",
-                    (value, value, current_ts, metadata_id, unix_timestamp),
-                )
+            )
+            existing = session.execute(existing_stmt).scalar_one_or_none()
+
+            if existing:
+                # Update existing
+                existing.state = value
+                existing.sum = value
+                existing.created_ts = created_ts
             else:
-                # Insert new statistic
-                current_ts = time.time()
-                conn.execute(
-                    """INSERT INTO statistics
-                       (metadata_id, start_ts, state, sum, created_ts)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (metadata_id, unix_timestamp, value, value, current_ts),
+                # Create new
+                short_term = StatisticsShortTerm(
+                    metadata_id=metadata_id,
+                    start_ts=timestamp,
+                    state=value,
+                    sum=value,
+                    created_ts=created_ts,
                 )
+                session.add(short_term)
 
-            # Also insert/update short-term statistics if recent
-            days_ago = (dt_util.now().timestamp() - unix_timestamp) / (24 * 3600)
-            if days_ago <= SHORT_TERM_STATISTICS_DAYS:
-                # Check if statistics_short_term table exists
-                cursor = conn.execute(
-                    "SELECT name FROM sqlite_master "
-                    "WHERE type='table' AND name='statistics_short_term'"
-                )
-                if cursor.fetchone():
-                    # Use INSERT OR REPLACE for short-term statistics
-                    conn.execute(
-                        """INSERT OR REPLACE INTO statistics_short_term
-                           (metadata_id, start_ts, state, sum, created_ts)
-                           VALUES (?, ?, ?, ?, ?)""",
-                        (metadata_id, unix_timestamp, value, value, current_ts),
-                    )
-
-            conn.commit()
-
-            LOGGER.info(
-                "Successfully added historical statistic for %s: %s at %s",
-                entity_id,
-                value,
-                timestamp,
-            )
-            return True
-
-        except sqlite3.Error as e:
-            LOGGER.error(
-                "Database error adding historical statistic for %s: %s", entity_id, e
-            )
-            if conn:
-                conn.rollback()
-            return False
-
-        except (ValueError, TypeError, AttributeError) as e:
-            LOGGER.error(
-                "Data error adding historical statistic for %s: %s", entity_id, e
-            )
-            if conn:
-                conn.rollback()
-            return False
-
-        finally:
-            if conn:
-                conn.close()
+        except SQLAlchemyError as e:
+            LOGGER.warning("Could not add short-term statistic: %s", e)
 
     def add_historical_state(
         self,
@@ -215,12 +250,10 @@ class HistoricalDataHandler:
         *,
         force_add: bool = False,
     ) -> bool:
-        """Add a historical state, but only if it represents a significant change."""
-        db_path = self._get_database_path()
-        if not db_path:
+        """Add a historical state using SQLAlchemy."""
+        if not self._validate_recorder_available():
             return False
 
-        # Convert timestamp to Unix epoch
         unix_timestamp = timestamp.timestamp()
 
         # Prepare attributes
@@ -232,288 +265,151 @@ class HistoricalDataHandler:
             }
 
         try:
-            with sqlite3.connect(db_path) as conn:
+            with session_scope(hass=self.hass) as session:
+                # Get or create states metadata
+                states_metadata = self._get_or_create_states_metadata(
+                    session, entity_id
+                )
+                if not states_metadata:
+                    return False
+
                 # Check if we should add this state (avoid duplicates/noise)
                 if not force_add:
-                    # Get the most recent state value
-                    cursor = conn.execute(
-                        """SELECT state, last_changed_ts FROM states
-                           WHERE entity_id = ?
-                           ORDER BY last_changed_ts DESC
-                           LIMIT 1""",
-                        (entity_id,),
+                    recent_stmt = (
+                        select(States)
+                        .where(States.metadata_id == states_metadata.metadata_id)
+                        .order_by(desc(States.last_changed_ts))
+                        .limit(1)
                     )
-                    recent_state = cursor.fetchone()
+                    recent_state = session.execute(recent_stmt).scalar_one_or_none()
 
-                    if recent_state:
-                        try:
-                            recent_value = float(recent_state[0])
-                            recent_timestamp = recent_state[1]
-
-                            # Skip if same value and within 1 hour
-                            value_diff = abs(recent_value - value)
-                            time_diff = abs(unix_timestamp - recent_timestamp)
-                            if (
-                                value_diff < VALUE_DIFFERENCE_THRESHOLD
-                                and time_diff < TIME_DIFFERENCE_THRESHOLD
-                            ):
-                                return True  # Skip, but not an error
-
-                        except (ValueError, TypeError):
-                            pass  # Previous state wasn't numeric, proceed
-
-                # Check if state exists for this exact timestamp
-                cursor = conn.execute(
-                    """SELECT state_id FROM states
-                       WHERE entity_id = ?
-                       AND ABS(last_changed_ts - ?) < 1.0
-                       LIMIT 1""",
-                    (entity_id, unix_timestamp),
-                )
-                existing_state = cursor.fetchone()
+                    if recent_state and self._should_skip_state(
+                        recent_state, value, unix_timestamp
+                    ):
+                        return True  # Skip, but not an error
 
                 current_ts = time.time()
                 attrs_json = str(attributes).replace("'", '"')
 
+                # Check if state exists for this exact timestamp
+                existing_stmt = select(States).where(
+                    and_(
+                        States.metadata_id == states_metadata.metadata_id,
+                        func.abs(States.last_changed_ts - unix_timestamp) < 1.0,
+                    )
+                )
+                existing_state = session.execute(existing_stmt).scalar_one_or_none()
+
                 if existing_state:
                     # Update existing state
-                    conn.execute(
-                        """UPDATE states
-                           SET state = ?, attributes = ?,
-                               last_changed_ts = ?, last_updated_ts = ?
-                           WHERE state_id = ?""",
-                        (
-                            str(value),
-                            attrs_json,
-                            unix_timestamp,
-                            current_ts,
-                            existing_state[0],
-                        ),
+                    existing_state.state = str(value)
+                    existing_state.attributes = attrs_json
+                    existing_state.last_changed_ts = unix_timestamp
+                    existing_state.last_updated_ts = current_ts
+                    LOGGER.debug(
+                        "Updated existing state for %s at %s", entity_id, timestamp
                     )
                 else:
-                    # Insert new state
-                    conn.execute(
-                        """INSERT INTO states
-                           (entity_id, state, attributes, last_changed_ts,
-                            last_updated_ts)
-                           VALUES (?, ?, ?, ?, ?)""",
-                        (
-                            entity_id,
-                            str(value),
-                            attrs_json,
-                            unix_timestamp,
-                            current_ts,
-                        ),
+                    # Create new state
+                    state = States(
+                        metadata_id=states_metadata.metadata_id,
+                        entity_id=entity_id,
+                        state=str(value),
+                        attributes=attrs_json,
+                        last_changed_ts=unix_timestamp,
+                        last_updated_ts=current_ts,
+                    )
+                    session.add(state)
+                    LOGGER.debug(
+                        "Added new historical state for %s at %s", entity_id, timestamp
                     )
 
-                LOGGER.debug(
-                    "Added historical state for %s: %s at %s",
-                    entity_id,
-                    value,
-                    timestamp,
-                )
                 return True
 
-        except sqlite3.Error as e:
+        except SQLAlchemyError as e:
             LOGGER.error(
-                "Database error adding historical state for %s: %s", entity_id, e
+                "SQLAlchemy error adding historical state for %s: %s", entity_id, e
             )
             return False
-            return False
 
-        # Convert timestamp to Unix epoch
-        unix_timestamp = timestamp.timestamp()
-
-        # Prepare attributes
-        if attributes is None:
-            attributes = {
-                "unit_of_measurement": unit,
-                "device_class": "energy",
-                "state_class": "total_increasing",
-            }
-
-        conn = None
+    def _should_skip_state(
+        self, recent_state: States, new_value: float, new_timestamp: float
+    ) -> bool:
+        """Determine if we should skip adding a state due to similarity."""
         try:
-            # Connect to database
-            conn = sqlite3.connect(db_path)
-            conn.execute("BEGIN TRANSACTION")
+            if recent_state.state is None or recent_state.last_changed_ts is None:
+                return False
 
-            # Check if state exists for this timestamp (within 1 second)
-            cursor = conn.execute(
-                """SELECT state_id FROM states
-                   WHERE entity_id = ?
-                   AND ABS(last_changed_ts - ?) < 1.0
-                   LIMIT 1""",
-                (entity_id, unix_timestamp),
+            recent_value = float(recent_state.state)
+            value_diff = abs(recent_value - new_value)
+            time_diff = abs(new_timestamp - recent_state.last_changed_ts)
+
+            return (
+                value_diff < VALUE_DIFFERENCE_THRESHOLD
+                and time_diff < TIME_DIFFERENCE_THRESHOLD
             )
-            existing_state = cursor.fetchone()
-
-            current_ts = time.time()
-            attrs_json = str(attributes).replace("'", '"')
-
-            if existing_state:
-                # Update existing state
-                conn.execute(
-                    """UPDATE states
-                       SET state = ?, attributes = ?,
-                           last_changed_ts = ?, last_updated_ts = ?
-                       WHERE state_id = ?""",
-                    (
-                        str(value),
-                        attrs_json,
-                        unix_timestamp,
-                        current_ts,
-                        existing_state[0],
-                    ),
-                )
-                LOGGER.debug(
-                    "Updated existing state for %s at %s", entity_id, timestamp
-                )
-            else:
-                # Insert new state
-                conn.execute(
-                    """INSERT INTO states
-                       (entity_id, state, attributes, last_changed_ts,
-                        last_updated_ts)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (
-                        entity_id,
-                        str(value),
-                        attrs_json,
-                        unix_timestamp,
-                        current_ts,
-                    ),
-                )
-                LOGGER.debug(
-                    "Added new historical state for %s at %s", entity_id, timestamp
-                )
-
-            conn.commit()
-            return True
-
-        except sqlite3.Error as e:
-            LOGGER.error(
-                "Database error adding historical state for %s: %s", entity_id, e
-            )
-            if conn:
-                conn.rollback()
-            return False
-
-        except (ValueError, TypeError, AttributeError) as e:
-            LOGGER.error("Data error adding historical state for %s: %s", entity_id, e)
-            if conn:
-                conn.rollback()
-            return False
-
-        finally:
-            if conn:
-                conn.close()
+        except (ValueError, TypeError):
+            return False  # Previous state wasn't numeric, proceed
 
     def get_latest_statistic(self, entity_id: str) -> tuple[datetime, float] | None:
-        """Get the latest statistic for an entity."""
-        db_path = self._get_database_path()
-        if not db_path:
+        """Get the latest statistic for an entity using SQLAlchemy."""
+        if not self._validate_recorder_available():
             return None
 
-        statistic_id = entity_id.replace("sensor.", f"{DOMAIN}:")
+        statistic_id = entity_id
 
         try:
-            conn = sqlite3.connect(db_path)
+            with session_scope(hass=self.hass) as session:
+                stmt = (
+                    select(Statistics.start_ts, Statistics.sum)
+                    .join(StatisticsMeta, Statistics.metadata_id == StatisticsMeta.id)
+                    .where(StatisticsMeta.statistic_id == statistic_id)
+                    .order_by(desc(Statistics.start_ts))
+                    .limit(1)
+                )
 
-            cursor = conn.execute(
-                """SELECT s.start_ts, s.sum
-                   FROM statistics s
-                   JOIN statistics_meta m ON s.metadata_id = m.id
-                   WHERE m.statistic_id = ?
-                   ORDER BY s.start_ts DESC
-                   LIMIT 1""",
-                (statistic_id,),
-            )
+                result = session.execute(stmt).first()
 
-            result = cursor.fetchone()
-            conn.close()
+                if result:
+                    timestamp = dt_util.utc_from_timestamp(result[0])
+                    return timestamp, result[1]
 
-            if result:
-                timestamp = dt_util.utc_from_timestamp(result[0])
-                return timestamp, result[1]
+                return None
 
-            return None
-
-        except sqlite3.Error as e:
+        except SQLAlchemyError as e:
             LOGGER.error("Error getting latest statistic for %s: %s", entity_id, e)
             return None
 
-    def validate_database_access(self) -> bool:
-        """Validate that we can access the database."""
-        db_path = self._get_database_path()
-        if not db_path:
-            return False
-
-        try:
-            conn = sqlite3.connect(db_path)
-
-            # Check for required tables
-            required_tables = ["statistics_meta", "statistics"]
-            for table in required_tables:
-                cursor = conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                    (table,),
-                )
-                if not cursor.fetchone():
-                    LOGGER.error("Required table %s not found in database", table)
-                    conn.close()
-                    return False
-
-            conn.close()
-            LOGGER.info("Database access validation successful")
-            return True
-
-        except sqlite3.Error as e:
-            LOGGER.error("Database validation failed: %s", e)
-            return False
-
     def clear_statistics_for_entity(self, entity_id: str) -> bool:
-        """Clear all statistics data for an entity."""
-        db_path = self._get_database_path()
-        if not db_path:
+        """Clear all statistics data for an entity using SQLAlchemy."""
+        if not self._validate_recorder_available():
             return False
 
         try:
-            with sqlite3.connect(
-                db_path, timeout=10.0, check_same_thread=False
-            ) as conn:
-                # Get metadata ID for the entity
-                cursor = conn.execute(
-                    "SELECT id FROM statistics_meta WHERE statistic_id = ?",
-                    (entity_id,),
+            with session_scope(hass=self.hass) as session:
+                # Find metadata for the entity
+                metadata_stmt = select(StatisticsMeta).where(
+                    StatisticsMeta.statistic_id == entity_id
                 )
-                result = cursor.fetchone()
+                metadata = session.execute(metadata_stmt).scalar_one_or_none()
 
-                if not result:
+                if not metadata:
                     LOGGER.debug("No statistics metadata found for %s", entity_id)
                     return True
 
-                metadata_id = result[0]
-
                 # Delete statistics entries
-                cursor = conn.execute(
-                    "DELETE FROM statistics WHERE metadata_id = ?",
-                    (metadata_id,),
+                stats_delete = delete(Statistics).where(
+                    Statistics.metadata_id == metadata.id
                 )
-                deleted_count = cursor.rowcount
+                result = session.execute(stats_delete)
+                deleted_count = result.rowcount
 
-                # Delete short-term statistics entries (if table exists)
-                try:
-                    cursor = conn.execute(
-                        "DELETE FROM statistics_short_term WHERE metadata_id = ?",
-                        (metadata_id,),
-                    )
-                    deleted_short_term = cursor.rowcount
-                except sqlite3.OperationalError:
-                    # Table might not exist in older HA versions
-                    deleted_short_term = 0
-
-                conn.commit()
+                # Delete short-term statistics entries
+                short_term_delete = delete(StatisticsShortTerm).where(
+                    StatisticsShortTerm.metadata_id == metadata.id
+                )
+                short_result = session.execute(short_term_delete)
+                deleted_short_term = short_result.rowcount
 
                 LOGGER.info(
                     "Cleared statistics for %s: %d long-term, %d short-term",
@@ -523,116 +419,58 @@ class HistoricalDataHandler:
                 )
                 return True
 
-        except sqlite3.Error as e:
+        except SQLAlchemyError as e:
             LOGGER.error("Error clearing statistics for %s: %s", entity_id, e)
-            return False
-
-    def cleanup_invalid_states(self, entity_id: str) -> bool:
-        """Clean up invalid, duplicate, and inconsistent states for an entity."""
-        db_path = self._get_database_path()
-        if not db_path:
-            return False
-
-        try:
-            with sqlite3.connect(db_path) as conn:
-                # Get metadata_id for the entity
-                cursor = conn.execute(
-                    "SELECT metadata_id FROM states_meta WHERE entity_id = ?",
-                    (entity_id,),
-                )
-                result = cursor.fetchone()
-                if not result:
-                    LOGGER.warning("Entity %s not found in states_meta", entity_id)
-                    return False
-
-                metadata_id = result[0]
-
-                # Remove invalid states (empty, unavailable, non-numeric)
-                cursor = conn.execute(
-                    """DELETE FROM states
-                       WHERE metadata_id = ?
-                       AND (state = '' OR state = 'unavailable'
-                            OR state = 'unknown' OR state IS NULL)""",
-                    (metadata_id,),
-                )
-                invalid_deleted = cursor.rowcount
-
-                # Remove duplicate states (same state value within 5 minutes)
-                cursor = conn.execute(
-                    """DELETE FROM states
-                       WHERE metadata_id = ?
-                       AND state_id NOT IN (
-                           SELECT MAX(state_id)
-                           FROM states
-                           WHERE metadata_id = ?
-                           GROUP BY
-                               state,
-                               CAST((COALESCE(
-                                   last_changed_ts,
-                                   last_updated_ts,
-                                   last_reported_ts
-                               ) / 300) AS INTEGER)
-                       )""",
-                    (metadata_id, metadata_id),
-                )
-                duplicate_deleted = cursor.rowcount
-
-                # Remove states with impossible values (negative for energy)
-                cursor = conn.execute(
-                    """DELETE FROM states
-                       WHERE metadata_id = ?
-                       AND CAST(state AS REAL) < 0""",
-                    (metadata_id,),
-                )
-                negative_deleted = cursor.rowcount
-
-                LOGGER.info(
-                    "Cleaned up states for %s: %d invalid, %d duplicates, %d negative",
-                    entity_id,
-                    invalid_deleted,
-                    duplicate_deleted,
-                    negative_deleted,
-                )
-                return True
-
-        except sqlite3.Error as e:
-            LOGGER.error("Error cleaning up states for %s: %s", entity_id, e)
             return False
 
     def clear_states_for_entity(
         self, entity_id: str, *, keep_latest: bool = True
     ) -> bool:
-        """Clear state history for an entity, optionally keeping latest state."""
-        db_path = self._get_database_path()
-        if not db_path:
+        """Clear state history for an entity using SQLAlchemy."""
+        if not self._validate_recorder_available():
             return False
 
         try:
-            with sqlite3.connect(
-                db_path, timeout=10.0, check_same_thread=False
-            ) as conn:
+            with session_scope(hass=self.hass) as session:
+                # Find states metadata
+                metadata_stmt = select(StatesMeta).where(
+                    StatesMeta.entity_id == entity_id
+                )
+                metadata = session.execute(metadata_stmt).scalar_one_or_none()
+
+                if not metadata:
+                    LOGGER.debug("No states metadata found for %s", entity_id)
+                    return True
+
                 if keep_latest:
                     # Keep only the most recent state
-                    cursor = conn.execute(
-                        """DELETE FROM states
-                           WHERE entity_id = ?
-                           AND state_id NOT IN (
-                               SELECT state_id FROM states
-                               WHERE entity_id = ?
-                               ORDER BY last_changed_ts DESC
-                               LIMIT 1
-                           )""",
-                        (entity_id, entity_id),
+                    latest_stmt = (
+                        select(States.state_id)
+                        .where(States.metadata_id == metadata.metadata_id)
+                        .order_by(desc(States.last_changed_ts))
+                        .limit(1)
                     )
+                    latest_result = session.execute(latest_stmt).scalar_one_or_none()
+
+                    if latest_result:
+                        # Delete all except the latest
+                        delete_stmt = delete(States).where(
+                            and_(
+                                States.metadata_id == metadata.metadata_id,
+                                States.state_id != latest_result,
+                            )
+                        )
+                    else:
+                        # No states found, nothing to delete
+                        return True
                 else:
                     # Delete all states
-                    cursor = conn.execute(
-                        "DELETE FROM states WHERE entity_id = ?",
-                        (entity_id,),
+                    delete_stmt = delete(States).where(
+                        States.metadata_id == metadata.metadata_id
                     )
 
-                deleted_count = cursor.rowcount
-                conn.commit()
+                result = session.execute(delete_stmt)
+                deleted_count = result.rowcount
 
                 LOGGER.info(
                     "Cleared %d state entries for %s (keep_latest=%s)",
@@ -642,126 +480,105 @@ class HistoricalDataHandler:
                 )
                 return True
 
-        except sqlite3.Error as e:
+        except SQLAlchemyError as e:
             LOGGER.error("Error clearing states for %s: %s", entity_id, e)
             return False
 
-    def complete_clear_entity_data(self, entity_id: str) -> bool:
-        """
-        Completely clear ALL data associated with an entity from all tables.
+    async def validate_database_access(self) -> bool:
+        """Validate that we can access the database using SQLAlchemy."""
+        if not self._validate_recorder_available():
+            return False
 
-        This is a comprehensive reset that removes:
-        - All states (current and historical)
-        - All statistics (long-term)
-        - All short-term statistics
-        - Orphaned state attributes
-        - Related context data
+        def _sync_validate() -> bool:
+            try:
+                with session_scope(hass=self.hass) as session:
+                    # Simple query to test access
+                    stmt = select(func.count()).select_from(StatisticsMeta)
+                    session.execute(stmt).scalar()
+                    LOGGER.info("SQLAlchemy database access validation successful")
+                    return True
+            except SQLAlchemyError as e:
+                LOGGER.error("SQLAlchemy database validation failed: %s", e)
+                return False
 
-        Used for complete rebuilds to ensure no residual test/invalid data remains.
-        """
-        db_path = self._get_database_path()
-        if not db_path:
+        # Run in executor to avoid blocking the event loop
+        return await self.hass.async_add_executor_job(_sync_validate)
+
+    def clear_all_metermate_statistics(self) -> bool:
+        """Clear all statistics created by MeterMate integration."""
+        if not self._validate_recorder_available():
             return False
 
         try:
-            with sqlite3.connect(db_path, timeout=30.0) as conn:
-                conn.execute("BEGIN TRANSACTION")
+            with session_scope(hass=self.hass) as session:
+                # Find all MeterMate metadata entries
+                metadata_stmt = select(StatisticsMeta).where(
+                    StatisticsMeta.source == DOMAIN
+                )
+                metadata_results = session.execute(metadata_stmt).scalars().all()
+
+                if not metadata_results:
+                    LOGGER.debug("No MeterMate statistics metadata found")
+                    return True
 
                 total_deleted = 0
+                total_short_term_deleted = 0
 
-                # Step 1: Get metadata_id for states
-                cursor = conn.execute(
-                    "SELECT metadata_id FROM states_meta WHERE entity_id = ?",
-                    (entity_id,),
-                )
-                state_metadata = cursor.fetchone()
-
-                if state_metadata:
-                    metadata_id = state_metadata[0]
-
-                    # Clear all states
-                    cursor = conn.execute(
-                        "DELETE FROM states WHERE metadata_id = ?",
-                        (metadata_id,),
+                for metadata in metadata_results:
+                    # Delete statistics entries
+                    stats_delete = delete(Statistics).where(
+                        Statistics.metadata_id == metadata.id
                     )
-                    states_deleted = cursor.rowcount
-                    total_deleted += states_deleted
-                    LOGGER.debug("Deleted %d states for %s", states_deleted, entity_id)
+                    result = session.execute(stats_delete)
+                    deleted_count = result.rowcount
+                    total_deleted += deleted_count
 
-                # Step 2: Get metadata_ids for statistics
-                # (both sensor and metermate formats)
-                statistics_patterns = [
-                    entity_id,  # sensor.manual_meter
-                    f"{DOMAIN}:{entity_id.replace('sensor.', '')}",
-                ]
-
-                stats_metadata_ids = []
-                for pattern in statistics_patterns:
-                    cursor = conn.execute(
-                        "SELECT id FROM statistics_meta WHERE statistic_id = ?",
-                        (pattern,),
+                    # Delete short-term statistics entries
+                    short_term_delete = delete(StatisticsShortTerm).where(
+                        StatisticsShortTerm.metadata_id == metadata.id
                     )
-                    result = cursor.fetchone()
-                    if result:
-                        stats_metadata_ids.append((pattern, result[0]))
-
-                # Clear statistics for all found metadata_ids
-                for stat_id, metadata_id in stats_metadata_ids:
-                    # Clear long-term statistics
-                    cursor = conn.execute(
-                        "DELETE FROM statistics WHERE metadata_id = ?",
-                        (metadata_id,),
-                    )
-                    stats_deleted = cursor.rowcount
-                    total_deleted += stats_deleted
-
-                    # Clear short-term statistics
-                    cursor = conn.execute(
-                        "DELETE FROM statistics_short_term WHERE metadata_id = ?",
-                        (metadata_id,),
-                    )
-                    short_stats_deleted = cursor.rowcount
-                    total_deleted += short_stats_deleted
+                    short_result = session.execute(short_term_delete)
+                    deleted_short_term = short_result.rowcount
+                    total_short_term_deleted += deleted_short_term
 
                     LOGGER.debug(
-                        "Deleted %d statistics and %d short-term statistics for %s",
-                        stats_deleted,
-                        short_stats_deleted,
-                        stat_id,
+                        "Cleared statistics for %s: %d long-term, %d short-term",
+                        metadata.statistic_id,
+                        deleted_count,
+                        deleted_short_term,
                     )
 
-                # Step 3: Clean up orphaned state attributes
-                cursor = conn.execute(
-                    """DELETE FROM state_attributes
-                       WHERE attributes_id NOT IN (
-                           SELECT DISTINCT attributes_id FROM states
-                           WHERE attributes_id IS NOT NULL
-                       )"""
-                )
-                orphaned_attrs = cursor.rowcount
-                total_deleted += orphaned_attrs
-
-                if orphaned_attrs > 0:
-                    LOGGER.debug("Deleted %d orphaned state attributes", orphaned_attrs)
-
-                # Step 4: Clean up old recorder runs if needed
-                cursor = conn.execute(
-                    "DELETE FROM recorder_runs "
-                    "WHERE start < datetime('now', '-30 days')"
-                )
-                old_runs = cursor.rowcount
-                if old_runs > 0:
-                    LOGGER.debug("Deleted %d old recorder runs", old_runs)
-
-                conn.commit()
-
                 LOGGER.info(
-                    "Complete data clear for %s: %d total entries deleted",
-                    entity_id,
+                    "Cleared all MeterMate statistics: %d long-term, "
+                    "%d short-term entries from %d entities",
                     total_deleted,
+                    total_short_term_deleted,
+                    len(metadata_results),
                 )
                 return True
 
-        except sqlite3.Error as e:
-            LOGGER.error("Error in complete clear for %s: %s", entity_id, e)
+        except SQLAlchemyError as e:
+            LOGGER.error("Error clearing all MeterMate statistics: %s", e)
             return False
+
+    def get_metermate_entities(self) -> list[str]:
+        """Get list of all entity IDs that have MeterMate statistics."""
+        if not self._validate_recorder_available():
+            return []
+
+        try:
+            with session_scope(hass=self.hass) as session:
+                stmt = select(StatisticsMeta.statistic_id).where(
+                    StatisticsMeta.source == DOMAIN
+                )
+                results = session.execute(stmt).scalars().all()
+                # Filter out None values (shouldn't happen but type safety)
+                return [r for r in results if r is not None]
+
+        except SQLAlchemyError as e:
+            LOGGER.error("Error getting MeterMate entities: %s", e)
+            return []
+
+
+# Alias for backward compatibility - use SQLAlchemy implementation
+HistoricalDataHandler = SQLAlchemyHistoricalDataHandler

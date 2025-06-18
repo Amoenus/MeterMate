@@ -1088,7 +1088,7 @@ class MeterMateDataManager:
             )
 
             # Step 1: Validate database access
-            if not self._historical_handler.validate_database_access():
+            if not await self._historical_handler.validate_database_access():
                 return OperationResult(
                     success=False,
                     message="Cannot access Home Assistant database",
