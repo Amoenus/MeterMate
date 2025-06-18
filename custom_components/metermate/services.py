@@ -532,6 +532,14 @@ class MeterMateServices:
         notes = call.data.get("notes", "")
         unit = call.data.get("unit", "kWh")
 
+        def _raise_error(message: str) -> None:
+            """Raise a HomeAssistantError with the given message."""
+            raise HomeAssistantError(message)
+
+        def _raise_error_from(message: str, cause: Exception) -> None:
+            """Raise a HomeAssistantError with the given message and cause."""
+            raise HomeAssistantError(message) from cause
+
         try:
             result = await self.data_manager.add_meter_reading(
                 entity_id=entity_id,
@@ -542,7 +550,7 @@ class MeterMateServices:
             )
 
             if not result.success:
-                raise HomeAssistantError(result.message)
+                _raise_error(result.message)
 
             _LOGGER.info(
                 "Added meter reading for %s: %s %s",
@@ -554,7 +562,7 @@ class MeterMateServices:
         except Exception as e:
             _LOGGER.exception("Error adding meter reading")
             error_msg = f"Failed to add meter reading: {e!s}"
-            raise HomeAssistantError(error_msg) from e
+            _raise_error_from(error_msg, e)
 
     async def _handle_add_consumption_period(self, call: ServiceCall) -> None:
         """Add consumption for a period and calculate ending meter reading."""
@@ -564,6 +572,14 @@ class MeterMateServices:
         period_end = call.data["period_end"]
         notes = call.data.get("notes", "")
         unit = call.data.get("unit", "kWh")
+
+        def _raise_error(message: str) -> None:
+            """Raise a HomeAssistantError with the given message."""
+            raise HomeAssistantError(message)
+
+        def _raise_error_from(message: str, cause: Exception) -> None:
+            """Raise a HomeAssistantError with the given message and cause."""
+            raise HomeAssistantError(message) from cause
 
         try:
             result = await self.data_manager.add_consumption_period(
@@ -576,7 +592,7 @@ class MeterMateServices:
             )
 
             if not result.success:
-                raise HomeAssistantError(result.message)
+                _raise_error(result.message)
 
             _LOGGER.info(
                 "Added consumption period for %s: %s %s from %s to %s",
@@ -590,7 +606,7 @@ class MeterMateServices:
         except Exception as e:
             _LOGGER.exception("Error adding consumption period")
             error_msg = f"Failed to add consumption period: {e!s}"
-            raise HomeAssistantError(error_msg) from e
+            _raise_error_from(error_msg, e)
 
     async def _handle_update_meter_reading(self, call: ServiceCall) -> None:
         """Handle update_meter_reading service call."""
