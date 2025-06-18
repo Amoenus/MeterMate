@@ -12,7 +12,7 @@ from homeassistant.components.recorder.statistics import async_add_external_stat
 from homeassistant.helpers import storage
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import ATTR_INTEGRATION_NAME
 from .database import HistoricalDataHandler
 from .models import OperationResult, Reading, ValidationResult
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
-STORAGE_KEY = f"{DOMAIN}_readings"
+STORAGE_KEY = f"{ATTR_INTEGRATION_NAME}_readings"
 
 # State management constants
 MINIMUM_STATE_CHANGE = 0.1  # Minimum change to record new state
@@ -424,12 +424,12 @@ class MeterMateDataManager:
         unit = readings[0].unit if readings else "kWh"
 
         # Create metadata first - external statistics need domain:id format
-        statistic_id = f"{DOMAIN}:{entity_id.replace('sensor.', '')}"
+        statistic_id = f"{ATTR_INTEGRATION_NAME}:{entity_id.replace('sensor.', '')}"
         metadata = StatisticMetaData(
             has_mean=False,
             has_sum=True,
             name=entity_id.replace("sensor.", "").replace("_", " ").title(),
-            source=DOMAIN,
+            source=ATTR_INTEGRATION_NAME,
             statistic_id=statistic_id,
             unit_of_measurement=unit,
         )
@@ -495,11 +495,11 @@ class MeterMateDataManager:
         if latest_reading.id == new_reading.id:
             # Get the sensor entity and update its value
             if (
-                DOMAIN in self.hass.data
-                and "entities" in self.hass.data[DOMAIN]
-                and entity_id in self.hass.data[DOMAIN]["entities"]
+                ATTR_INTEGRATION_NAME in self.hass.data
+                and "entities" in self.hass.data[ATTR_INTEGRATION_NAME]
+                and entity_id in self.hass.data[ATTR_INTEGRATION_NAME]["entities"]
             ):
-                sensor = self.hass.data[DOMAIN]["entities"][entity_id]
+                sensor = self.hass.data[ATTR_INTEGRATION_NAME]["entities"][entity_id]
                 await sensor.update_value(latest_reading.value)
                 _LOGGER.debug(
                     "Updated sensor %s value to %s %s (latest reading)",
@@ -527,11 +527,11 @@ class MeterMateDataManager:
 
         # Get the sensor entity and update its value
         if (
-            DOMAIN in self.hass.data
-            and "entities" in self.hass.data[DOMAIN]
-            and entity_id in self.hass.data[DOMAIN]["entities"]
+            ATTR_INTEGRATION_NAME in self.hass.data
+            and "entities" in self.hass.data[ATTR_INTEGRATION_NAME]
+            and entity_id in self.hass.data[ATTR_INTEGRATION_NAME]["entities"]
         ):
-            sensor = self.hass.data[DOMAIN]["entities"][entity_id]
+            sensor = self.hass.data[ATTR_INTEGRATION_NAME]["entities"][entity_id]
             await sensor.update_value(latest_reading.value)
             _LOGGER.debug(
                 "Updated sensor %s value to %s %s",

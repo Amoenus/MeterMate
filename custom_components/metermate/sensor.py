@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import CONF_DEVICE_CLASS, CONF_NAME, CONF_UNIT_OF_MEASUREMENT
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CONF_INITIAL_READING, DOMAIN
+from .const import ATTR_INTEGRATION_NAME, CONF_INITIAL_READING
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         """Initialize the sensor."""
         self._entry = entry
         self._attr_name = entry.data[CONF_NAME]
-        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}"
+        self._attr_unique_id = f"{ATTR_INTEGRATION_NAME}_{entry.entry_id}"
 
         # Handle unit of measurement - provide default if None
         unit = entry.data.get(CONF_UNIT_OF_MEASUREMENT)
@@ -86,7 +86,7 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
     def device_info(self) -> dict[str, Any]:
         """Return device information about this sensor."""
         return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "identifiers": {(ATTR_INTEGRATION_NAME, self._entry.entry_id)},
             "name": self._attr_name,
             "manufacturer": "MeterMate",
             "model": "Manual Meter",
@@ -98,12 +98,12 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         await super().async_added_to_hass()
 
         # Register this entity in our domain data for service access
-        if DOMAIN not in self.hass.data:
-            self.hass.data[DOMAIN] = {}
-        if "entities" not in self.hass.data[DOMAIN]:
-            self.hass.data[DOMAIN]["entities"] = {}
+        if ATTR_INTEGRATION_NAME not in self.hass.data:
+            self.hass.data[ATTR_INTEGRATION_NAME] = {}
+        if "entities" not in self.hass.data[ATTR_INTEGRATION_NAME]:
+            self.hass.data[ATTR_INTEGRATION_NAME]["entities"] = {}
 
-        self.hass.data[DOMAIN]["entities"][self.entity_id] = self
+        self.hass.data[ATTR_INTEGRATION_NAME]["entities"][self.entity_id] = self
         _LOGGER.debug("Registered entity %s in domain data", self.entity_id)
 
         # Restore the last state if available
@@ -172,7 +172,7 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         """Return extra state attributes."""
         attributes = {
             "initial_reading": self._initial_reading,
-            "integration": DOMAIN,
+            "integration": ATTR_INTEGRATION_NAME,
         }
 
         # Store last good value to help with recovery from unwanted resets
@@ -227,11 +227,11 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         """When entity is being removed from hass."""
         # Clean up our entity registry
         if (
-            DOMAIN in self.hass.data
-            and "entities" in self.hass.data[DOMAIN]
-            and self.entity_id in self.hass.data[DOMAIN]["entities"]
+            ATTR_INTEGRATION_NAME in self.hass.data
+            and "entities" in self.hass.data[ATTR_INTEGRATION_NAME]
+            and self.entity_id in self.hass.data[ATTR_INTEGRATION_NAME]["entities"]
         ):
-            del self.hass.data[DOMAIN]["entities"][self.entity_id]
+            del self.hass.data[ATTR_INTEGRATION_NAME]["entities"][self.entity_id]
             _LOGGER.debug("Unregistered entity %s from domain data", self.entity_id)
 
         await super().async_will_remove_from_hass()
@@ -241,13 +241,13 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         try:
             # Get the data manager
             if (
-                DOMAIN not in self.hass.data
-                or "data_manager" not in self.hass.data[DOMAIN]
+                ATTR_INTEGRATION_NAME not in self.hass.data
+                or "data_manager" not in self.hass.data[ATTR_INTEGRATION_NAME]
             ):
                 _LOGGER.warning("Data manager not available for sensor update")
                 return
 
-            data_manager = self.hass.data[DOMAIN]["data_manager"]
+            data_manager = self.hass.data[ATTR_INTEGRATION_NAME]["data_manager"]
 
             # Get all readings for this entity
             readings = await data_manager.get_all_readings(self.entity_id)

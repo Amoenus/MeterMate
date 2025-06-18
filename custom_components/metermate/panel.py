@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import callback
 
-from .const import DOMAIN
+from .const import ATTR_INTEGRATION_NAME
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -24,7 +24,7 @@ PANEL_FILENAME = "index.html"
 
 async def async_register_panel(hass: HomeAssistant) -> None:
     """Register the MeterMate panel."""
-    if DOMAIN not in hass.data:
+    if ATTR_INTEGRATION_NAME not in hass.data:
         _LOGGER.error("MeterMate domain not found in hass.data")
         return
 

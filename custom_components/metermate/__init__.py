@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.const import Platform
 
-from .const import DOMAIN
+from .const import ATTR_INTEGRATION_NAME
 from .data_manager import MeterMateDataManager
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_setup_services, async_unload_services
@@ -36,7 +36,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:  # noqa:
     await data_manager.async_load()
 
     # Store the data manager
-    hass.data.setdefault(DOMAIN, {})["data_manager"] = data_manager
+    hass.data.setdefault(ATTR_INTEGRATION_NAME, {})["data_manager"] = data_manager
 
     # Set up services
     await async_setup_services(hass, data_manager)
@@ -50,12 +50,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:  # noqa:
 async def async_setup_entry(hass: HomeAssistant, entry: MeterMateConfigEntry) -> bool:
     """Set up MeterMate from a config entry."""
     # Initialize domain data if not present
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
+    if ATTR_INTEGRATION_NAME not in hass.data:
+        hass.data[ATTR_INTEGRATION_NAME] = {}
 
     # Initialize entity registry for our domain
-    if "entities" not in hass.data[DOMAIN]:
-        hass.data[DOMAIN]["entities"] = {}
+    if "entities" not in hass.data[ATTR_INTEGRATION_NAME]:
+        hass.data[ATTR_INTEGRATION_NAME]["entities"] = {}
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

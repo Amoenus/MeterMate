@@ -16,10 +16,10 @@ from homeassistant.const import (
 )
 from homeassistant.helpers import selector
 
-from .const import CONF_INITIAL_READING, DEFAULT_NAME, DOMAIN
+from .const import ATTR_INTEGRATION_NAME, CONF_INITIAL_READING, DEFAULT_NAME
 
 
-class MeterMateFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
+class MeterMateFlowHandler(config_entries.ConfigFlow, domain=ATTR_INTEGRATION_NAME):
     """Config flow for MeterMate."""
 
     VERSION = 1

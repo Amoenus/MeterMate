@@ -4,7 +4,7 @@ from logging import Logger, getLogger
 
 LOGGER: Logger = getLogger(__package__)
 
-DOMAIN = "metermate"
+ATTR_INTEGRATION_NAME = "metermate"
 
 # Service parameters (alphabetical order)
 ATTR_END_DATE = "end_date"

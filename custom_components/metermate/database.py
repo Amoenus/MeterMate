@@ -20,7 +20,7 @@ from homeassistant.const import ATTR_DEVICE_CLASS, ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.helpers.recorder import get_instance, session_scope
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, LOGGER
+from .const import ATTR_INTEGRATION_NAME, LOGGER
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -56,7 +56,7 @@ class HistoricalDataHandler:
         statistic_id: str,
         unit: str,
         name: str,
-        source: str = DOMAIN,
+        source: str = ATTR_INTEGRATION_NAME,
     ) -> StatisticsMeta | None:
         """Get or create statistics metadata using SQLAlchemy."""
         try:
@@ -544,7 +544,7 @@ class HistoricalDataHandler:
                 with session_scope(hass=self.hass) as session:
                     # Find all MeterMate metadata entries
                     metadata_stmt = select(StatisticsMeta).where(
-                        StatisticsMeta.source == DOMAIN
+                        StatisticsMeta.source == ATTR_INTEGRATION_NAME
                     )
                     metadata_results = session.execute(metadata_stmt).scalars().all()
 
@@ -604,7 +604,7 @@ class HistoricalDataHandler:
             try:
                 with session_scope(hass=self.hass) as session:
                     stmt = select(StatisticsMeta.statistic_id).where(
-                        StatisticsMeta.source == DOMAIN
+                        StatisticsMeta.source == ATTR_INTEGRATION_NAME
                     )
                     results = session.execute(stmt).scalars().all()
                     # Filter out None values (shouldn't happen but type safety)

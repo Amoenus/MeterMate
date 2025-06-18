@@ -14,13 +14,9 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    ATTR_END_DATE,
     ATTR_ENTITY_ID,
+    ATTR_INTEGRATION_NAME,
     ATTR_NOTES,
-    ATTR_START_DATE,
-    ATTR_TIMESTAMP,
-    ATTR_VALUE,
-    DOMAIN,
 )
 from .data_manager import MeterMateDataManager, TimePeriod
 from .models import Reading
@@ -176,7 +172,7 @@ class MeterMateServices:
 
         # Register add_reading service
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_ADD_READING,
             self._handle_add_reading,
             schema=SERVICE_ADD_READING_SCHEMA,
@@ -184,7 +180,7 @@ class MeterMateServices:
 
         # Register update_reading service
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_UPDATE_READING,
             self._handle_update_reading,
             schema=SERVICE_UPDATE_READING_SCHEMA,
@@ -192,7 +188,7 @@ class MeterMateServices:
 
         # Register delete_reading service
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_DELETE_READING,
             self._handle_delete_reading,
             schema=SERVICE_DELETE_READING_SCHEMA,
@@ -200,7 +196,7 @@ class MeterMateServices:
 
         # Register get_readings service
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_GET_READINGS,
             self._handle_get_readings,
             schema=SERVICE_GET_READINGS_SCHEMA,
@@ -209,7 +205,7 @@ class MeterMateServices:
 
         # Register bulk_import service
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_BULK_IMPORT,
             self._handle_bulk_import,
             schema=SERVICE_BULK_IMPORT_SCHEMA,
@@ -217,7 +213,7 @@ class MeterMateServices:
 
         # Register recalculate_statistics service
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_RECALCULATE_STATISTICS,
             self._handle_recalculate_statistics,
             schema=SERVICE_RECALCULATE_STATISTICS_SCHEMA,
@@ -225,7 +221,7 @@ class MeterMateServices:
 
         # Register rebuild_history service
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_REBUILD_HISTORY,
             self._handle_rebuild_history,
             schema=SERVICE_REBUILD_HISTORY_SCHEMA,
@@ -233,14 +229,14 @@ class MeterMateServices:
 
         # Register new enhanced services
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_ADD_METER_READING,
             self._handle_add_meter_reading,
             schema=SERVICE_ADD_METER_READING_SCHEMA,
         )
 
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_ADD_CONSUMPTION_PERIOD,
             self._handle_add_consumption_period,
             schema=SERVICE_ADD_CONSUMPTION_PERIOD_SCHEMA,
@@ -248,14 +244,14 @@ class MeterMateServices:
 
         # Register new update services
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_UPDATE_METER_READING,
             self._handle_update_meter_reading,
             schema=SERVICE_UPDATE_METER_READING_SCHEMA,
         )
 
         self.hass.services.async_register(
-            DOMAIN,
+            ATTR_INTEGRATION_NAME,
             SERVICE_UPDATE_CONSUMPTION_PERIOD,
             self._handle_update_consumption_period,
             schema=SERVICE_UPDATE_CONSUMPTION_PERIOD_SCHEMA,
@@ -280,7 +276,7 @@ class MeterMateServices:
         ]
 
         for service in services_to_remove:
-            self.hass.services.async_remove(DOMAIN, service)
+            self.hass.services.async_remove(ATTR_INTEGRATION_NAME, service)
 
         _LOGGER.debug("MeterMate services unregistered")
 
@@ -715,12 +711,15 @@ async def async_setup_services(
     await services.async_register_services()
 
     # Store the services instance for later cleanup
-    hass.data.setdefault(DOMAIN, {})["services"] = services
+    hass.data.setdefault(ATTR_INTEGRATION_NAME, {})["services"] = services
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:
     """Unload MeterMate services."""
-    if DOMAIN in hass.data and "services" in hass.data[DOMAIN]:
-        services = hass.data[DOMAIN]["services"]
+    if (
+        ATTR_INTEGRATION_NAME in hass.data
+        and "services" in hass.data[ATTR_INTEGRATION_NAME]
+    ):
+        services = hass.data[ATTR_INTEGRATION_NAME]["services"]
         await services.async_unregister_services()
-        del hass.data[DOMAIN]["services"]
+        del hass.data[ATTR_INTEGRATION_NAME]["services"]
