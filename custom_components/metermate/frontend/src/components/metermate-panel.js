@@ -6,18 +6,18 @@
 
   // Load icon polyfill first
   const iconPolyfill = document.createElement('script');
-  iconPolyfill.src = '/metermate/ha-icon-polyfill.js';
+  iconPolyfill.src = '/metermate/src/utils/ha-icon-polyfill.js';
   document.head.appendChild(iconPolyfill);
 
   // Also load API for backward compatibility
   const apiScript = document.createElement('script');
-  apiScript.src = '/metermate/api.js';
+  apiScript.src = '/metermate/src/services/api.js';
   document.head.appendChild(apiScript);
 
   // Import the modern HA UI version
   const script = document.createElement('script');
   script.type = 'module';
-  script.src = '/metermate/ha-metermate-panel.js';
+  script.src = '/metermate/src/components/ha-metermate-panel.js';
   document.head.appendChild(script);
 
   // Define the custom element that HA expects

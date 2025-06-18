@@ -7,13 +7,42 @@ This directory contains the frontend implementation for MeterMate using Home Ass
 ### Files Overview
 
 - **`index.html`** - Main HTML entry point with HA theming
-- **`metermate-panel.js`** - Panel loader and element registration
-- **`ha-metermate-panel.js`** - Modern HA UI implementation
-- **`ha-icon-polyfill.js`** - Fallback for HA icons when not available
-- **`api.js`** - API client for backend communication
-- **`meter-panel-legacy.js`** - Legacy implementation (fallback)
-- **`ui-components.js`** - Legacy UI components (fallback)
-- **`styles.css`** - Legacy styles (fallback)
+- **`src/`** - Source code directory organized by type
+  - **`components/`** - UI Components
+    - `metermate-panel.js` - Panel loader and element registration
+    - `ha-metermate-panel.js` - Modern HA UI implementation
+    - `ui-components.js` - Reusable UI components (legacy fallback)
+  - **`services/`** - API and backend communication
+    - `api.js` - API client for backend communication
+  - **`utils/`** - Utility functions and polyfills
+    - `ha-icon-polyfill.js` - Fallback for HA icons when not available
+  - **`styles/`** - CSS styles
+    - `main.css` - Main stylesheet with HA theming
+- **`assets/`** - Static assets (if any)
+
+### Modern Frontend Architecture
+
+The new structure follows modern frontend best practices:
+
+#### 📁 **Component-Based Architecture**
+- Separated UI components from business logic
+- Reusable components for consistent design
+- Clear separation of concerns
+
+#### 📁 **Service Layer**
+- API client isolated in services directory
+- Easy to test and mock
+- Clean separation between data and presentation
+
+#### 📁 **Utility Functions**
+- Common utilities and polyfills
+- Icon polyfill for HA compatibility
+- Reusable helper functions
+
+#### 📁 **Organized Styles**
+- Single main stylesheet
+- CSS custom properties for theming
+- Responsive design patterns
 
 ### Home Assistant Design System Integration
 
