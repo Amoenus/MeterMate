@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sensor platform for MeterMate."""
+"""Support for MeterMate sensors."""
 
 from __future__ import annotations
 
@@ -185,7 +185,7 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         """Update the sensor value."""
         old_value = self._attr_native_value
 
-        _LOGGER.info("update_value called: old=%s, new=%s", old_value, new_value)
+        _LOGGER.debug("update_value called: old=%s, new=%s", old_value, new_value)
 
         # Protect against unwanted resets to 0.0
         if (
@@ -209,19 +209,19 @@ class MeterMateSensor(SensorEntity, RestoreEntity):
         if new_value > 0:
             self._last_good_value = new_value
 
-        _LOGGER.info("Updating sensor value from %s to %s", old_value, new_value)
+        _LOGGER.debug("Updating sensor value from %s to %s", old_value, new_value)
         _LOGGER.debug("Last good value updated to: %s", self._last_good_value)
 
         self.async_write_ha_state()
-        _LOGGER.info("State written to Home Assistant")
+        _LOGGER.debug("State written to Home Assistant")
 
     def async_write_ha_state(self) -> None:
         """Write the state to Home Assistant."""
-        _LOGGER.info(
+        _LOGGER.debug(
             "async_write_ha_state called: current value=%s", self._attr_native_value
         )
         super().async_write_ha_state()
-        _LOGGER.info("async_write_ha_state completed")
+        _LOGGER.debug("async_write_ha_state completed")
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity is being removed from hass."""

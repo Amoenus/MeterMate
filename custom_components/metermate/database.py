@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 
 # Constants
 SHORT_TERM_STATISTICS_DAYS = 10
+# Threshold for considering values as "same" (0.001)
+VALUE_DIFFERENCE_THRESHOLD = 0.001
+# Time threshold for considering readings as too close (1 hour in seconds)
+TIME_DIFFERENCE_THRESHOLD = 3600
 
 
 class HistoricalDataHandler:
@@ -106,7 +110,8 @@ class HistoricalDataHandler:
         # Convert timestamp to Unix epoch
         unix_timestamp = timestamp.timestamp()
 
-        # For historical data, use the original entity_id to integrate with Home Assistant's recorder statistics
+        # For historical data, use the original entity_id to integrate
+        # with Home Assistant's recorder statistics
         # This ensures historical data appears in the Energy Dashboard
         statistic_id = entity_id
 
@@ -116,7 +121,8 @@ class HistoricalDataHandler:
             conn = sqlite3.connect(db_path)
             conn.execute("BEGIN TRANSACTION")
 
-            # Get or create metadata - use 'recorder' as source to match Home Assistant's native statistics
+            # Get or create metadata - use 'recorder' as source
+            # to match Home Assistant's native statistics
             metadata_id = self._get_or_create_metadata_id(
                 conn, statistic_id, unit, name, source="recorder"
             )
@@ -206,6 +212,7 @@ class HistoricalDataHandler:
         value: float,
         unit: str,
         attributes: dict | None = None,
+        *,
         force_add: bool = False,
     ) -> bool:
         """Add a historical state, but only if it represents a significant change."""
@@ -244,9 +251,11 @@ class HistoricalDataHandler:
                             recent_timestamp = recent_state[1]
 
                             # Skip if same value and within 1 hour
+                            value_diff = abs(recent_value - value)
+                            time_diff = abs(unix_timestamp - recent_timestamp)
                             if (
-                                abs(recent_value - value) < 0.001
-                                and abs(unix_timestamp - recent_timestamp) < 3600
+                                value_diff < VALUE_DIFFERENCE_THRESHOLD
+                                and time_diff < TIME_DIFFERENCE_THRESHOLD
                             ):
                                 return True  # Skip, but not an error
 
@@ -640,7 +649,8 @@ class HistoricalDataHandler:
             return False
 
     def complete_clear_entity_data(self, entity_id: str) -> bool:
-        """Completely clear ALL data associated with an entity from all tables.
+        """
+        Completely clear ALL data associated with an entity from all tables.
 
         This is a comprehensive reset that removes:
         - All states (current and historical)
@@ -680,10 +690,11 @@ class HistoricalDataHandler:
                     total_deleted += states_deleted
                     LOGGER.debug("Deleted %d states for %s", states_deleted, entity_id)
 
-                # Step 2: Get metadata_ids for statistics (both sensor and metermate formats)
+                # Step 2: Get metadata_ids for statistics
+                # (both sensor and metermate formats)
                 statistics_patterns = [
                     entity_id,  # sensor.manual_meter
-                    f"{DOMAIN}:{entity_id.replace('sensor.', '')}",  # metermate:manual_meter
+                    f"{DOMAIN}:{entity_id.replace('sensor.', '')}",
                 ]
 
                 stats_metadata_ids = []
@@ -737,7 +748,8 @@ class HistoricalDataHandler:
 
                 # Step 4: Clean up old recorder runs if needed
                 cursor = conn.execute(
-                    "DELETE FROM recorder_runs WHERE start < datetime('now', '-30 days')"
+                    "DELETE FROM recorder_runs "
+                    "WHERE start < datetime('now', '-30 days')"
                 )
                 old_runs = cursor.rowcount
                 if old_runs > 0:

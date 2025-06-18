@@ -20,4 +20,3 @@ trim_trailing_whitespace = true
 
 [*.{sh,bash}]
 indent_size = 2
-

@@ -54,11 +54,11 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         require_admin=False,
     )
 
-    _LOGGER.info("MeterMate panel registered successfully")
+    _LOGGER.debug("MeterMate panel registered successfully")
 
 
 @callback
 def async_unregister_panel(hass: HomeAssistant) -> None:  # noqa: ARG001
     """Unregister the MeterMate panel."""
     # Note: Built-in panels are automatically cleaned up
-    _LOGGER.info("MeterMate panel unregistered")
+    _LOGGER.debug("MeterMate panel unregistered")

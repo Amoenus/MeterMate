@@ -576,15 +576,19 @@ class MeterMateDataManager:
     async def _regenerate_historical_data(
         self, entity_id: str, *, complete_rebuild: bool = False
     ) -> None:
-        """Regenerate all historical data for an entity after changes.
+        """
+        Regenerate all historical data for an entity after changes.
 
         Args:
             entity_id: The entity to regenerate data for
             complete_rebuild: If True, performs a complete wipe and rebuild
+
         """
         try:
             # Step 1: Handle data clearing based on rebuild type
-            await self._handle_data_clearing(entity_id, complete_rebuild)
+            await self._handle_data_clearing(
+                entity_id, complete_rebuild=complete_rebuild
+            )
 
             # Step 2: Get all readings for the entity
             readings = await self.get_all_readings(entity_id)
@@ -597,7 +601,7 @@ class MeterMateDataManager:
 
             # Step 4: Generate historical data from readings
             await self._generate_historical_entries(
-                entity_id, readings, complete_rebuild
+                entity_id, readings, complete_rebuild=complete_rebuild
             )
 
             # Step 5: Update current sensor value to latest cumulative reading
@@ -615,7 +619,7 @@ class MeterMateDataManager:
             raise
 
     async def _handle_data_clearing(
-        self, entity_id: str, complete_rebuild: bool
+        self, entity_id: str, *, complete_rebuild: bool
     ) -> None:
         """Handle data clearing based on rebuild type."""
         if complete_rebuild:
@@ -673,7 +677,7 @@ class MeterMateDataManager:
         return readings_updated
 
     async def _generate_historical_entries(
-        self, entity_id: str, readings: list[Reading], complete_rebuild: bool
+        self, entity_id: str, readings: list[Reading], *, complete_rebuild: bool
     ) -> None:
         """Generate historical entries from readings."""
         sorted_readings = sorted(readings, key=lambda r: r.timestamp)
@@ -811,7 +815,8 @@ class MeterMateDataManager:
         notes: str = "",
         unit: str = "kWh",
     ) -> OperationResult:
-        """Add a new meter reading and calculate consumption from previous reading.
+        """
+        Add a new meter reading and calculate consumption from previous reading.
 
         Args:
             entity_id: The entity ID for the meter
@@ -822,6 +827,7 @@ class MeterMateDataManager:
 
         Returns:
             OperationResult with success status and calculated consumption
+
         """
         await self.async_load()
 
@@ -896,7 +902,8 @@ class MeterMateDataManager:
         notes: str = "",
         unit: str = "kWh",
     ) -> OperationResult:
-        """Add consumption for a period and calculate the ending meter reading.
+        """
+        Add consumption for a period and calculate the ending meter reading.
 
         Args:
             entity_id: The entity ID for the meter
@@ -908,6 +915,7 @@ class MeterMateDataManager:
 
         Returns:
             OperationResult with success status and calculated meter reading
+
         """
         await self.async_load()
 
