@@ -3,7 +3,7 @@
   "packages": [
     "python@3.13.3",
     "uv@0.7.12",
-    "git@latest",
+    "git@2.49.0",
     "curl@7.88.1",
     "ruff@latest",
     "ffmpeg@4.4.3",
