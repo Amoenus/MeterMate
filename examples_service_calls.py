@@ -61,15 +61,41 @@ service_call_bulk_import = {
     },
 }
 
-# Example 4: Update an existing reading (fix typo or correction)
-service_call_update = {
+# Example 4: Update an existing meter reading (fix typo or correction)
+service_call_update_meter = {
+    "service": "metermate.update_meter_reading",
+    "target": {"entity_id": "sensor.electricity_meter"},
+    "data": {
+        "reading_id": "abc123-def456-ghi789",  # From previous add_reading response
+        "meter_reading": 15434.7,  # Corrected meter reading value
+        "timestamp": "2025-06-01T10:00:00",
+        "unit": "kWh",
+        "notes": "Corrected monthly meter reading",
+    },
+}
+
+# Example 4b: Update an existing consumption period
+service_call_update_consumption = {
+    "service": "metermate.update_consumption_period",
+    "target": {"entity_id": "sensor.electricity_meter"},
+    "data": {
+        "reading_id": "def456-ghi789-jkl012",  # From previous add_consumption response
+        "consumption": 280.5,  # Corrected consumption amount
+        "period_start": "2025-05-01T00:00:00",
+        "period_end": "2025-05-31T23:59:59",
+        "unit": "kWh",
+        "notes": "Corrected electricity bill for May 2025",
+    },
+}
+
+# Example 4c: Legacy update_reading service (still supported)
+service_call_update_legacy = {
     "service": "metermate.update_reading",
     "target": {"entity_id": "sensor.electricity_meter"},
     "data": {
         "reading_id": "abc123-def456-ghi789",  # From previous add_reading response
-        "value": 15434.7,  # Corrected value
+        "meter_reading": 15434.7,  # Corrected meter reading value
         "timestamp": "2025-06-01T10:00:00",
-        "reading_type": "cumulative",
         "unit": "kWh",
         "notes": "Corrected monthly meter reading",
     },

@@ -32,6 +32,8 @@ SERVICE_REBUILD_HISTORY = "rebuild_history"
 # New enhanced services for meter readings and consumption
 SERVICE_ADD_METER_READING = "add_meter_reading"
 SERVICE_ADD_CONSUMPTION_PERIOD = "add_consumption_period"
+SERVICE_UPDATE_METER_READING = "update_meter_reading"
+SERVICE_UPDATE_CONSUMPTION_PERIOD = "update_consumption_period"
 
 # Service schemas
 SERVICE_ADD_READING_SCHEMA = vol.Schema(
@@ -48,10 +50,10 @@ SERVICE_UPDATE_READING_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.entity_id,
         vol.Required("reading_id"): cv.string,
-        vol.Required("value"): vol.Coerce(float),
+        vol.Required("meter_reading"): vol.Coerce(float),
         vol.Optional("timestamp"): cv.datetime,
         vol.Optional("unit", default="kWh"): cv.string,
-        vol.Optional("notes"): cv.string,
+        vol.Optional("notes", default=""): cv.string,
     }
 )
 
@@ -116,6 +118,29 @@ SERVICE_ADD_METER_READING_SCHEMA = vol.Schema(
 SERVICE_ADD_CONSUMPTION_PERIOD_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.entity_id,
+        vol.Required("consumption"): vol.Coerce(float),
+        vol.Required("period_start"): cv.datetime,
+        vol.Required("period_end"): cv.datetime,
+        vol.Optional("unit", default="kWh"): cv.string,
+        vol.Optional("notes", default=""): cv.string,
+    }
+)
+
+SERVICE_UPDATE_METER_READING_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("reading_id"): cv.string,
+        vol.Required("meter_reading"): vol.Coerce(float),
+        vol.Optional("timestamp"): cv.datetime,
+        vol.Optional("unit", default="kWh"): cv.string,
+        vol.Optional("notes", default=""): cv.string,
+    }
+)
+
+SERVICE_UPDATE_CONSUMPTION_PERIOD_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("reading_id"): cv.string,
         vol.Required("consumption"): vol.Coerce(float),
         vol.Required("period_start"): cv.datetime,
         vol.Required("period_end"): cv.datetime,
@@ -209,6 +234,21 @@ class MeterMateServices:
             schema=SERVICE_ADD_CONSUMPTION_PERIOD_SCHEMA,
         )
 
+        # Register new update services
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_UPDATE_METER_READING,
+            self._handle_update_meter_reading,
+            schema=SERVICE_UPDATE_METER_READING_SCHEMA,
+        )
+
+        self.hass.services.async_register(
+            DOMAIN,
+            SERVICE_UPDATE_CONSUMPTION_PERIOD,
+            self._handle_update_consumption_period,
+            schema=SERVICE_UPDATE_CONSUMPTION_PERIOD_SCHEMA,
+        )
+
         _LOGGER.info("MeterMate services registered successfully")
 
     async def async_unregister_services(self) -> None:
@@ -223,6 +263,8 @@ class MeterMateServices:
             SERVICE_REBUILD_HISTORY,
             SERVICE_ADD_METER_READING,
             SERVICE_ADD_CONSUMPTION_PERIOD,
+            SERVICE_UPDATE_METER_READING,
+            SERVICE_UPDATE_CONSUMPTION_PERIOD,
         ]
 
         for service in services_to_remove:
@@ -272,10 +314,10 @@ class MeterMateServices:
         """Handle update_reading service call."""
         entity_id = call.data["entity_id"]
         reading_id = call.data["reading_id"]
-        value = call.data["value"]
+        meter_reading = call.data["meter_reading"]
         timestamp = call.data.get("timestamp", dt_util.utcnow())
         unit = call.data.get("unit", "kWh")
-        notes = call.data.get("notes")
+        notes = call.data.get("notes", "")
 
         # Ensure timestamp is timezone-aware
         if timestamp is not None:
@@ -284,7 +326,7 @@ class MeterMateServices:
         # Create updated reading object - all readings are now meter readings
         updated_reading = Reading(
             timestamp=timestamp,
-            value=value,
+            value=meter_reading,
             unit=unit,
             notes=notes,
         )
@@ -549,6 +591,96 @@ class MeterMateServices:
             _LOGGER.exception("Error adding consumption period")
             error_msg = f"Failed to add consumption period: {e!s}"
             raise HomeAssistantError(error_msg) from e
+
+    async def _handle_update_meter_reading(self, call: ServiceCall) -> None:
+        """Handle update_meter_reading service call."""
+        entity_id = call.data["entity_id"]
+        reading_id = call.data["reading_id"]
+        meter_reading = call.data["meter_reading"]
+        timestamp = call.data.get("timestamp", dt_util.utcnow())
+        unit = call.data.get("unit", "kWh")
+        notes = call.data.get("notes", "")
+
+        # Ensure timestamp is timezone-aware
+        if timestamp is not None:
+            timestamp = dt_util.as_utc(timestamp)
+
+        # Create updated reading object - meter reading
+        updated_reading = Reading(
+            timestamp=timestamp,
+            value=meter_reading,
+            unit=unit,
+            notes=notes,
+        )
+
+        # Update the reading
+        result = await self.data_manager.update_reading(
+            entity_id, reading_id, updated_reading
+        )
+
+        if result.success:
+            _LOGGER.info(
+                "Successfully updated meter reading %s for %s",
+                reading_id,
+                entity_id,
+            )
+        else:
+            _LOGGER.error(
+                "Failed to update meter reading %s for %s: %s",
+                reading_id,
+                entity_id,
+                result.message,
+            )
+
+    async def _handle_update_consumption_period(self, call: ServiceCall) -> None:
+        """Handle update_consumption_period service call."""
+        entity_id = call.data["entity_id"]
+        reading_id = call.data["reading_id"]
+        consumption = call.data["consumption"]
+        period_start = call.data["period_start"]
+        period_end = call.data["period_end"]
+        unit = call.data.get("unit", "kWh")
+        notes = call.data.get("notes", "")
+
+        # Ensure timestamps are timezone-aware
+        period_start = dt_util.as_utc(period_start)
+        period_end = dt_util.as_utc(period_end)
+
+        # Create updated reading object - consumption period
+        # For consumption periods, we use the period_end as the timestamp
+        # and store the consumption value
+        period_note = (
+            f"Consumption period: {period_start.isoformat()} to "
+            f"{period_end.isoformat()}"
+        )
+        if notes:
+            period_note += f" | {notes}"
+
+        updated_reading = Reading(
+            timestamp=period_end,
+            value=consumption,
+            unit=unit,
+            notes=period_note,
+        )
+
+        # Update the reading
+        result = await self.data_manager.update_reading(
+            entity_id, reading_id, updated_reading
+        )
+
+        if result.success:
+            _LOGGER.info(
+                "Successfully updated consumption period %s for %s",
+                reading_id,
+                entity_id,
+            )
+        else:
+            _LOGGER.error(
+                "Failed to update consumption period %s for %s: %s",
+                reading_id,
+                entity_id,
+                result.message,
+            )
 
 
 async def async_setup_services(

@@ -59,8 +59,8 @@ update_reading:
       required: true
       selector:
         text:
-    value:
-      name: Reading Value
+    meter_reading:
+      name: Meter Reading
       description: The updated meter reading value
       required: true
       selector:
@@ -236,6 +236,105 @@ add_consumption_period:
     consumption:
       name: Consumption Amount
       description: The amount consumed during the period
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.001
+          mode: box
+    period_start:
+      name: Period Start
+      description: Start date and time of the consumption period
+      required: true
+      selector:
+        datetime:
+    period_end:
+      name: Period End
+      description: End date and time of the consumption period
+      required: true
+      selector:
+        datetime:
+    unit:
+      name: Unit of Measurement
+      description: Unit for the consumption (kWh, m³, gal, etc.)
+      required: false
+      default: kWh
+      selector:
+        text:
+    notes:
+      name: Notes
+      description: Optional notes about this period (e.g., bill number)
+      required: false
+      selector:
+        text:
+
+update_meter_reading:
+  name: Update Meter Reading
+  description: Update an existing cumulative meter reading
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    reading_id:
+      name: Reading ID
+      description: The ID of the reading to update
+      required: true
+      selector:
+        text:
+    meter_reading:
+      name: Meter Reading
+      description: The updated cumulative meter reading value
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.001
+          mode: box
+    timestamp:
+      name: Reading Timestamp
+      description: When the reading was taken
+      required: false
+      selector:
+        datetime:
+    unit:
+      name: Unit of Measurement
+      description: Unit for the reading (kWh, kW, m³, gal, etc.)
+      required: false
+      default: kWh
+      selector:
+        text:
+    notes:
+      name: Notes
+      description: Optional notes about this reading
+      required: false
+      selector:
+        text:
+          multiline: true
+
+update_consumption_period:
+  name: Update Consumption Period
+  description: Update an existing consumption period from utility bill
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    reading_id:
+      name: Reading ID
+      description: The ID of the consumption period to update
+      required: true
+      selector:
+        text:
+    consumption:
+      name: Consumption Amount
+      description: The updated consumption for this period
       required: true
       selector:
         number:

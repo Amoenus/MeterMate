@@ -174,13 +174,37 @@ data:
 ### Update an Existing Reading
 
 ```yaml
-# Correct a previous reading
+# Update a meter reading
+service: metermate.update_meter_reading
+target:
+  entity_id: sensor.electricity_meter
+data:
+  reading_id: "abc123-def456-ghi789"  # From add_reading response
+  meter_reading: 15434.7  # Corrected meter reading value
+  notes: "Corrected monthly meter reading"
+```
+
+```yaml
+# Update a consumption period
+service: metermate.update_consumption_period
+target:
+  entity_id: sensor.electricity_meter
+data:
+  reading_id: "def456-ghi789-jkl012"  # From add_consumption response
+  consumption: 280.5  # Corrected consumption amount
+  period_start: "2025-05-01T00:00:00"
+  period_end: "2025-05-31T23:59:59"
+  notes: "Corrected electricity bill for May 2025"
+```
+
+```yaml
+# Legacy update (still supported)
 service: metermate.update_reading
 target:
   entity_id: sensor.electricity_meter
 data:
   reading_id: "abc123-def456-ghi789"  # From add_reading response
-  value: 15434.7  # Corrected value
+  meter_reading: 15434.7  # Corrected meter reading value
   notes: "Corrected monthly meter reading"
 ```
 
