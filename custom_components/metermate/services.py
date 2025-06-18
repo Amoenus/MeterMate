@@ -647,20 +647,16 @@ class MeterMateServices:
         period_end = dt_util.as_utc(period_end)
 
         # Create updated reading object - consumption period
-        # For consumption periods, we use the period_end as the timestamp
-        # and store the consumption value
-        period_note = (
-            f"Consumption period: {period_start.isoformat()} to "
-            f"{period_end.isoformat()}"
-        )
-        if notes:
-            period_note += f" | {notes}"
-
+        # For consumption periods, we preserve the period structure
         updated_reading = Reading(
-            timestamp=period_end,
-            value=consumption,
+            timestamp=period_end,  # Use period_end as main timestamp for sorting
+            value=consumption,  # Store consumption as the main value
             unit=unit,
-            notes=period_note,
+            notes=notes,
+            # Preserve consumption period structure
+            period_start=period_start,
+            period_end=period_end,
+            consumption=consumption,
         )
 
         # Update the reading
