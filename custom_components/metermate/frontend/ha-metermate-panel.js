@@ -286,19 +286,17 @@ class HAMeterMatePanel extends HTMLElement {
         this.shadowRoot.getElementById("add-period-start").required = true;
         this.shadowRoot.getElementById("add-period-end").required = true;
       }
-    }
-
-    async _handleEditReading(event) {
+    }    async _handleEditReading(event) {
       event.preventDefault();
       const formData = new FormData(event.target);
 
       if (!this._editingReading) return;
 
       try {
-        const isConsumptionPeriod = this._editingReading.period_start && this._editingReading.period_end;
+        const entryType = formData.get("entryType");
 
-        if (isConsumptionPeriod) {
-          // Update consumption period
+        if (entryType === 'consumption') {
+          // Update as consumption period
           await this._api.updateConsumptionPeriod(
             this._editingReading.meter_id,
             this._editingReading.id,
@@ -308,12 +306,12 @@ class HAMeterMatePanel extends HTMLElement {
             formData.get("notes") || ""
           );
         } else {
-          // Update meter reading
+          // Update as meter reading
           await this._api.updateMeterReading(
             this._editingReading.meter_id,
             this._editingReading.id,
-            parseFloat(formData.get("value")),
-            formData.get("datetime"),
+            parseFloat(formData.get("meter_reading")),
+            formData.get("reading_datetime"),
             formData.get("notes") || ""
           );
         }
@@ -938,26 +936,79 @@ class HAMeterMatePanel extends HTMLElement {
           </div>
         </div>
       `;
-    }
-
-    _renderEditDialog() {
+    }    _renderEditDialog() {
       if (!this._editingReading) return '';
 
+      // Initialize edit type based on current reading type
       const isConsumptionPeriod = this._editingReading.period_start && this._editingReading.period_end;
+      const defaultType = isConsumptionPeriod ? 'consumption' : 'meter_reading';
 
       return `
         <div class="dialog-overlay" onclick="event.target === this && window.meterMatePanel._closeEditDialog()">
           <div class="dialog">
             <div class="dialog-header">
-              <h3>Edit ${isConsumptionPeriod ? 'Consumption Period' : 'Meter Reading'}</h3>
+              <h3>Edit Reading</h3>
             </div>
             <form onsubmit="window.meterMatePanel._handleEditReading(event)">
               <div class="dialog-content">
-                ${isConsumptionPeriod ? this._renderConsumptionPeriodFields() : this._renderMeterReadingFields()}
+                <!-- Entry Type Selection -->
+                <div class="form-field">
+                  <label>Entry Type</label>
+                  <div class="radio-group">
+                    <label class="radio-label">
+                      <input type="radio" name="entryType" value="meter_reading" ${defaultType === 'meter_reading' ? 'checked' : ''} onchange="window.meterMatePanel._toggleEditEntryType()">
+                      <span>Meter Reading</span>
+                      <small>Enter the current meter reading (consumption will be calculated)</small>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" name="entryType" value="consumption" ${defaultType === 'consumption' ? 'checked' : ''} onchange="window.meterMatePanel._toggleEditEntryType()">
+                      <span>Consumption Period</span>
+                      <small>Enter consumption for a specific period (ending meter reading will be calculated)</small>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Meter Reading Fields -->
+                <div id="edit-meter-reading-fields" ${defaultType === 'consumption' ? 'style="display: none;"' : ''}>
+                  <div class="form-field">
+                    <label for="edit-meter-reading">Meter Reading</label>
+                    <input id="edit-meter-reading" name="meter_reading" type="number" step="0.001" min="0" value="${this._editingReading.value || ''}" ${defaultType === 'meter_reading' ? 'required' : ''}>
+                    <small>The current reading shown on your meter</small>
+                  </div>
+                  <div class="form-field">
+                    <label for="edit-reading-datetime">Reading Date & Time</label>
+                    <input id="edit-reading-datetime" name="reading_datetime" type="datetime-local" value="${new Date(this._editingReading.timestamp).toISOString().slice(0, 16)}" ${defaultType === 'meter_reading' ? 'required' : ''}>
+                  </div>
+                </div>
+
+                <!-- Consumption Period Fields -->
+                <div id="edit-consumption-fields" ${defaultType === 'meter_reading' ? 'style="display: none;"' : ''}>
+                  <div class="form-field">
+                    <label for="edit-consumption">Consumption Amount</label>
+                    <input id="edit-consumption" name="consumption" type="number" step="0.001" min="0" value="${this._editingReading.consumption || this._editingReading.value || ''}" ${defaultType === 'consumption' ? 'required' : ''}>
+                    <small>Amount consumed during the period</small>
+                  </div>
+                  <div class="form-field-group">
+                    <div class="form-field">
+                      <label for="edit-period-start">Period Start</label>
+                      <input id="edit-period-start" name="period_start" type="datetime-local" value="${this._editingReading.period_start ? new Date(this._editingReading.period_start).toISOString().slice(0, 16) : ''}" ${defaultType === 'consumption' ? 'required' : ''}>
+                    </div>
+                    <div class="form-field">
+                      <label for="edit-period-end">Period End</label>
+                      <input id="edit-period-end" name="period_end" type="datetime-local" value="${this._editingReading.period_end ? new Date(this._editingReading.period_end).toISOString().slice(0, 16) : new Date(this._editingReading.timestamp).toISOString().slice(0, 16)}" ${defaultType === 'consumption' ? 'required' : ''}>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Common Fields -->
+                <div class="form-field">
+                  <label for="edit-notes">Notes (optional)</label>
+                  <input id="edit-notes" name="notes" type="text" value="${this._editingReading.notes || ''}" placeholder="e.g., Bill number, special circumstances">
+                </div>
               </div>
               <div class="dialog-actions">
                 <button type="button" class="btn btn-secondary" onclick="window.meterMatePanel._closeEditDialog()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Update ${isConsumptionPeriod ? 'Consumption Period' : 'Reading'}</button>
+                <button type="submit" class="btn btn-primary">Update Reading</button>
               </div>
             </form>
           </div>
@@ -965,42 +1016,30 @@ class HAMeterMatePanel extends HTMLElement {
       `;
     }
 
-    _renderMeterReadingFields() {
-      return `
-        <div class="form-field">
-          <label for="edit-value">Meter Reading</label>
-          <input id="edit-value" name="value" type="number" step="0.01" value="${this._editingReading.value}" required autofocus>
-        </div>
-        <div class="form-field">
-          <label for="edit-datetime">Date & Time</label>
-          <input id="edit-datetime" name="datetime" type="datetime-local" value="${new Date(this._editingReading.timestamp).toISOString().slice(0, 16)}" required>
-        </div>
-        <div class="form-field">
-          <label for="edit-notes">Notes (optional)</label>
-          <input id="edit-notes" name="notes" type="text" value="${this._editingReading.notes || ''}">
-        </div>
-      `;
-    }
+    _toggleEditEntryType() {
+      const meterReadingFields = this.shadowRoot.getElementById("edit-meter-reading-fields");
+      const consumptionFields = this.shadowRoot.getElementById("edit-consumption-fields");
+      const entryType = this.shadowRoot.querySelector('input[name="entryType"]:checked').value;
 
-    _renderConsumptionPeriodFields() {
-      return `
-        <div class="form-field">
-          <label for="edit-consumption">Consumption Amount</label>
-          <input id="edit-consumption" name="consumption" type="number" step="0.01" value="${this._editingReading.consumption || this._editingReading.value}" required autofocus>
-        </div>
-        <div class="form-field">
-          <label for="edit-period-start">Period Start</label>
-          <input id="edit-period-start" name="period_start" type="datetime-local" value="${new Date(this._editingReading.period_start).toISOString().slice(0, 16)}" required>
-        </div>
-        <div class="form-field">
-          <label for="edit-period-end">Period End</label>
-          <input id="edit-period-end" name="period_end" type="datetime-local" value="${new Date(this._editingReading.period_end).toISOString().slice(0, 16)}" required>
-        </div>
-        <div class="form-field">
-          <label for="edit-notes">Notes (optional)</label>
-          <input id="edit-notes" name="notes" type="text" value="${this._editingReading.notes || ''}">
-        </div>
-      `;
+      if (entryType === "meter_reading") {
+        meterReadingFields.style.display = "block";
+        consumptionFields.style.display = "none";
+        // Make meter reading required
+        this.shadowRoot.getElementById("edit-meter-reading").required = true;
+        this.shadowRoot.getElementById("edit-reading-datetime").required = true;
+        this.shadowRoot.getElementById("edit-consumption").required = false;
+        this.shadowRoot.getElementById("edit-period-start").required = false;
+        this.shadowRoot.getElementById("edit-period-end").required = false;
+      } else {
+        meterReadingFields.style.display = "none";
+        consumptionFields.style.display = "block";
+        // Make consumption fields required
+        this.shadowRoot.getElementById("edit-meter-reading").required = false;
+        this.shadowRoot.getElementById("edit-reading-datetime").required = false;
+        this.shadowRoot.getElementById("edit-consumption").required = true;
+        this.shadowRoot.getElementById("edit-period-start").required = true;
+        this.shadowRoot.getElementById("edit-period-end").required = true;
+      }
     }
   }
 
