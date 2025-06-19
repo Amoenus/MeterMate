@@ -9,11 +9,44 @@
           "unit_of_measurement": "Unit of Measurement",
           "device_class": "Device Class",
           "initial_reading": "Initial Reading (Optional)"
+        },
+        "data_description": {
+          "name": "A unique name for your meter (e.g., 'Main Electric Meter')",
+          "unit_of_measurement": "Select the unit that matches your physical meter",
+          "device_class": "Choose the type of utility being measured",
+          "initial_reading": "Current reading on your meter (0 if starting fresh)"
         }
       }
     },
     "abort": {
       "already_configured": "This meter is already configured."
+    },
+    "error": {
+      "incompatible_device_class_unit": "The selected device class and unit are not compatible.",
+      "negative_reading": "Initial reading cannot be negative."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "MeterMate Options",
+        "description": "Modify settings for your meter.",
+        "data": {
+          "name": "Meter Name",
+          "unit_of_measurement": "Unit of Measurement",
+          "device_class": "Device Class",
+          "initial_reading": "Initial Reading"
+        },
+        "data_description": {
+          "name": "The name of your meter (read-only)",
+          "unit_of_measurement": "The unit of measurement (read-only)",
+          "device_class": "The device class (read-only)",
+          "initial_reading": "Adjust the baseline reading for calculations"
+        }
+      }
+    },
+    "error": {
+      "negative_reading": "Initial reading cannot be negative."
     }
   },
   "services": {
