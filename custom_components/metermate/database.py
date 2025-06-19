@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import and_, delete, desc, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -30,9 +30,9 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 # Constants
-SHORT_TERM_STATISTICS_DAYS = 10
-VALUE_DIFFERENCE_THRESHOLD = 0.001
-TIME_DIFFERENCE_THRESHOLD = 3600
+SHORT_TERM_STATISTICS_DAYS: Final[int] = 10
+VALUE_DIFFERENCE_THRESHOLD: Final[float] = 0.001
+TIME_DIFFERENCE_THRESHOLD: Final[int] = 3600
 
 
 class HistoricalDataHandler:

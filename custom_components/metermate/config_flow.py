@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -26,10 +28,10 @@ class MeterMateFlowHandler(config_entries.ConfigFlow, domain=ATTR_INTEGRATION_NA
 
     async def async_step_user(
         self,
-        user_input: dict | None = None,
+        user_input: dict[str, Any] | None = None,
     ) -> config_entries.ConfigFlowResult:
         """Handle a flow initialized by the user."""
-        _errors = {}
+        _errors: dict[str, str] = {}
 
         if user_input is not None:
             # Convert enum device_class to string for proper serialization
