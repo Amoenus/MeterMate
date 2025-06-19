@@ -2,18 +2,26 @@
   "config": {
     "step": {
       "user": {
-        "title": "MeterMate Setup",
-        "description": "Set up your manual meter reading integration.",
+        "title": "Select Meter Type",
+        "description": "First, choose what type of utility meter you want to track.",
+        "data": {
+          "device_class": "Meter Type"
+        },
+        "data_description": {
+          "device_class": "Choose the type of utility being measured by your meter"
+        }
+      },
+      "meter_config": {
+        "title": "Configure Your Meter",
+        "description": "Now configure the details for your meter.",
         "data": {
           "name": "Meter Name",
           "unit_of_measurement": "Unit of Measurement",
-          "device_class": "Device Class",
           "initial_reading": "Initial Reading (Optional)"
         },
         "data_description": {
           "name": "A unique name for your meter (e.g., 'Main Electric Meter')",
           "unit_of_measurement": "Select the unit that matches your physical meter",
-          "device_class": "Choose the type of utility being measured",
           "initial_reading": "Current reading on your meter (0 if starting fresh)"
         }
       }
@@ -22,7 +30,6 @@
       "already_configured": "This meter is already configured."
     },
     "error": {
-      "incompatible_device_class_unit": "The selected device class and unit are not compatible.",
       "negative_reading": "Initial reading cannot be negative."
     }
   },

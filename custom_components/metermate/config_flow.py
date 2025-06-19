@@ -31,6 +31,10 @@ class MeterMateFlowHandler(config_entries.ConfigFlow, domain=ATTR_INTEGRATION_NA
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        """Initialize config flow."""
+        self._device_class: str | None = None
+
     @staticmethod
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
@@ -42,32 +46,62 @@ class MeterMateFlowHandler(config_entries.ConfigFlow, domain=ATTR_INTEGRATION_NA
         self,
         user_input: dict[str, Any] | None = None,
     ) -> config_entries.ConfigFlowResult:
-        """Handle a flow initialized by the user."""
+        """Handle a flow initialized by the user - first step to select device class."""
         _errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Validate device class and unit compatibility
             device_class = user_input.get(CONF_DEVICE_CLASS)
-            unit = user_input.get(CONF_UNIT_OF_MEASUREMENT)
+            if device_class and hasattr(device_class, "value"):
+                self._device_class = device_class.value
+            else:
+                self._device_class = device_class
 
-            if (
-                device_class
-                and unit
-                and not self._validate_device_class_unit_compatibility(
-                    device_class, unit
-                )
-            ):
-                _errors["base"] = "incompatible_device_class_unit"
+            return await self.async_step_meter_config()
 
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_DEVICE_CLASS): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {
+                                    "value": SensorDeviceClass.ENERGY,
+                                    "label": "Energy (Electricity)",
+                                },
+                                {"value": SensorDeviceClass.GAS, "label": "Gas"},
+                                {"value": SensorDeviceClass.WATER, "label": "Water"},
+                                {
+                                    "value": SensorDeviceClass.VOLUME,
+                                    "label": "Volume (Other liquids)",
+                                },
+                            ]
+                        )
+                    ),
+                }
+            ),
+            errors=_errors,
+        )
+
+    async def async_step_meter_config(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> config_entries.ConfigFlowResult:
+        """Handle meter configuration with device class specific units."""
+        _errors: dict[str, str] = {}
+
+        if user_input is not None:
             # Validate initial reading is non-negative
             initial_reading = user_input.get(CONF_INITIAL_READING, 0)
             if initial_reading < 0:
                 _errors[CONF_INITIAL_READING] = "negative_reading"
 
             if not _errors:
-                # Convert enum device_class to string for proper serialization
-                if device_class and hasattr(device_class, "value"):
-                    user_input[CONF_DEVICE_CLASS] = device_class.value
+                # Combine with device class from previous step
+                complete_data = {
+                    CONF_DEVICE_CLASS: self._device_class,
+                    **user_input,
+                }
 
                 # Create unique ID based on the name
                 unique_id = user_input[CONF_NAME].lower().replace(" ", "_")
@@ -76,11 +110,14 @@ class MeterMateFlowHandler(config_entries.ConfigFlow, domain=ATTR_INTEGRATION_NA
 
                 return self.async_create_entry(
                     title=user_input[CONF_NAME],
-                    data=user_input,
+                    data=complete_data,
                 )
 
+        # Get unit options based on device class
+        unit_options = self._get_unit_options_for_device_class(self._device_class or "")
+
         return self.async_show_form(
-            step_id="user",
+            step_id="meter_config",
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_NAME, default=DEFAULT_NAME): TextSelector(
@@ -89,42 +126,7 @@ class MeterMateFlowHandler(config_entries.ConfigFlow, domain=ATTR_INTEGRATION_NA
                         )
                     ),
                     vol.Required(CONF_UNIT_OF_MEASUREMENT): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                {
-                                    "value": UnitOfEnergy.KILO_WATT_HOUR,
-                                    "label": "kWh (Electricity)",
-                                },
-                                {
-                                    "value": UnitOfEnergy.WATT_HOUR,
-                                    "label": "Wh (Electricity)",
-                                },
-                                {
-                                    "value": UnitOfEnergy.MEGA_WATT_HOUR,
-                                    "label": "MWh (Electricity)",
-                                },
-                                {
-                                    "value": UnitOfVolume.CUBIC_METERS,
-                                    "label": "m³ (Gas/Water)",
-                                },
-                                {
-                                    "value": UnitOfVolume.CUBIC_FEET,
-                                    "label": "ft³ (Gas)",
-                                },
-                                {"value": UnitOfVolume.LITERS, "label": "L (Water)"},
-                                {"value": UnitOfVolume.GALLONS, "label": "gal (Water)"},
-                            ]
-                        )
-                    ),
-                    vol.Required(CONF_DEVICE_CLASS): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                {"value": SensorDeviceClass.ENERGY, "label": "Energy"},
-                                {"value": SensorDeviceClass.GAS, "label": "Gas"},
-                                {"value": SensorDeviceClass.WATER, "label": "Water"},
-                                {"value": SensorDeviceClass.VOLUME, "label": "Volume"},
-                            ]
-                        )
+                        selector.SelectSelectorConfig(options=unit_options)  # type: ignore[arg-type]
                     ),
                     vol.Optional(CONF_INITIAL_READING, default=0): vol.Coerce(float),
                 }
@@ -132,32 +134,45 @@ class MeterMateFlowHandler(config_entries.ConfigFlow, domain=ATTR_INTEGRATION_NA
             errors=_errors,
         )
 
-    def _validate_device_class_unit_compatibility(
-        self, device_class: str, unit: str
-    ) -> bool:
-        """Validate that device class and unit are compatible."""
-        energy_units = {
-            UnitOfEnergy.KILO_WATT_HOUR,
-            UnitOfEnergy.WATT_HOUR,
-            UnitOfEnergy.MEGA_WATT_HOUR,
-        }
-        volume_units = {
-            UnitOfVolume.CUBIC_METERS,
-            UnitOfVolume.CUBIC_FEET,
-            UnitOfVolume.LITERS,
-            UnitOfVolume.GALLONS,
-        }
-
+    def _get_unit_options_for_device_class(
+        self, device_class: str
+    ) -> list[dict[str, Any]]:
+        """Get appropriate unit options based on device class."""
         if device_class == SensorDeviceClass.ENERGY:
-            return unit in energy_units
-        if device_class in (
-            SensorDeviceClass.GAS,
-            SensorDeviceClass.WATER,
-            SensorDeviceClass.VOLUME,
-        ):
-            return unit in volume_units
+            return [
+                {"value": UnitOfEnergy.KILO_WATT_HOUR, "label": "kWh (Kilowatt hours)"},
+                {"value": UnitOfEnergy.WATT_HOUR, "label": "Wh (Watt hours)"},
+                {"value": UnitOfEnergy.MEGA_WATT_HOUR, "label": "MWh (Megawatt hours)"},
+            ]
+        if device_class == SensorDeviceClass.GAS:
+            return [
+                {"value": UnitOfVolume.CUBIC_METERS, "label": "m³ (Cubic meters)"},
+                {"value": UnitOfVolume.CUBIC_FEET, "label": "ft³ (Cubic feet)"},
+            ]
+        if device_class == SensorDeviceClass.WATER:
+            return [
+                {"value": UnitOfVolume.CUBIC_METERS, "label": "m³ (Cubic meters)"},
+                {"value": UnitOfVolume.LITERS, "label": "L (Liters)"},
+                {"value": UnitOfVolume.GALLONS, "label": "gal (Gallons)"},
+            ]
+        if device_class == SensorDeviceClass.VOLUME:
+            return [
+                {"value": UnitOfVolume.CUBIC_METERS, "label": "m³ (Cubic meters)"},
+                {"value": UnitOfVolume.CUBIC_FEET, "label": "ft³ (Cubic feet)"},
+                {"value": UnitOfVolume.LITERS, "label": "L (Liters)"},
+                {"value": UnitOfVolume.GALLONS, "label": "gal (Gallons)"},
+            ]
 
-        return True
+        # Fallback to all units
+        return [
+            {"value": UnitOfEnergy.KILO_WATT_HOUR, "label": "kWh (Kilowatt hours)"},
+            {"value": UnitOfEnergy.WATT_HOUR, "label": "Wh (Watt hours)"},
+            {"value": UnitOfEnergy.MEGA_WATT_HOUR, "label": "MWh (Megawatt hours)"},
+            {"value": UnitOfVolume.CUBIC_METERS, "label": "m³ (Cubic meters)"},
+            {"value": UnitOfVolume.CUBIC_FEET, "label": "ft³ (Cubic feet)"},
+            {"value": UnitOfVolume.LITERS, "label": "L (Liters)"},
+            {"value": UnitOfVolume.GALLONS, "label": "gal (Gallons)"},
+        ]
 
 
 class MeterMateOptionsFlowHandler(config_entries.OptionsFlow):
