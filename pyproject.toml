@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13.2"
 dependencies = [
     "colorlog==6.9.0",
-    "homeassistant==2025.6.1",
+    "homeassistant==2025.8.2",
     "pip==25.1.1",
 ]
 
