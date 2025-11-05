@@ -9,7 +9,7 @@
     "ffmpeg@4.4.3",
     "libpcap@latest",
     "gh@2.82.1",
-    "fzf@0.62.0"
+    "fzf@0.66.1"
   ],
   "shell": {},
   "env": {
