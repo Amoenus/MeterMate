@@ -5,7 +5,7 @@ description = "Your smart friend for your dumb meter"
 readme = "README.md"
 requires-python = ">=3.13.2"
 dependencies = [
-    "colorlog==6.9.0",
+    "colorlog==6.10.1",
     "homeassistant==2025.10.4",
     "pip==25.1.1",
 ]
