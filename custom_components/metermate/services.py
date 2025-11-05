@@ -41,6 +41,10 @@ SERVICE_ADD_CONSUMPTION_PERIOD = "add_consumption_period"
 SERVICE_UPDATE_METER_READING = "update_meter_reading"
 SERVICE_UPDATE_CONSUMPTION_PERIOD = "update_consumption_period"
 
+# CSV import and validation services
+SERVICE_IMPORT_FROM_CSV = "import_from_csv"
+SERVICE_VALIDATE_READING = "validate_reading"
+
 # Service schemas
 SERVICE_ADD_READING_SCHEMA = vol.Schema(
     {
@@ -157,6 +161,27 @@ SERVICE_UPDATE_CONSUMPTION_PERIOD_SCHEMA = vol.Schema(
     }
 )
 
+SERVICE_IMPORT_FROM_CSV_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
+        vol.Required("file_path"): cv.string,
+        vol.Optional("delimiter", default=","): cv.string,
+        vol.Optional("decimal", default="."): cv.string,
+        vol.Optional("timezone"): cv.string,
+        vol.Optional("date_format"): cv.string,
+        vol.Optional("dry_run", default=False): cv.boolean,
+    }
+)
+
+SERVICE_VALIDATE_READING_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
+        vol.Required("value"): vol.Coerce(float),
+        vol.Optional("timestamp"): cv.datetime,
+        vol.Optional(ATTR_UNIT_OF_MEASUREMENT, default="kWh"): cv.string,
+    }
+)
+
 
 class MeterMateServices:
     """Service handler for MeterMate integration."""
@@ -257,6 +282,22 @@ class MeterMateServices:
             schema=SERVICE_UPDATE_CONSUMPTION_PERIOD_SCHEMA,
         )
 
+        # Register CSV import and validation services
+        self.hass.services.async_register(
+            ATTR_INTEGRATION_NAME,
+            SERVICE_IMPORT_FROM_CSV,
+            self._handle_import_from_csv,
+            schema=SERVICE_IMPORT_FROM_CSV_SCHEMA,
+        )
+
+        self.hass.services.async_register(
+            ATTR_INTEGRATION_NAME,
+            SERVICE_VALIDATE_READING,
+            self._handle_validate_reading,
+            schema=SERVICE_VALIDATE_READING_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
+
         _LOGGER.debug("MeterMate services registered successfully")
 
     async def async_unregister_services(self) -> None:
@@ -273,6 +314,8 @@ class MeterMateServices:
             SERVICE_ADD_CONSUMPTION_PERIOD,
             SERVICE_UPDATE_METER_READING,
             SERVICE_UPDATE_CONSUMPTION_PERIOD,
+            SERVICE_IMPORT_FROM_CSV,
+            SERVICE_VALIDATE_READING,
         ]
 
         for service in services_to_remove:
@@ -701,6 +744,114 @@ class MeterMateServices:
                 entity_id,
                 result.message,
             )
+
+    async def _handle_import_from_csv(self, call: ServiceCall) -> None:
+        """Handle import_from_csv service call."""
+        from .import_helper import async_import_csv
+
+        entity_id = call.data[ATTR_ENTITY_ID]
+        file_path = call.data["file_path"]
+        delimiter = call.data.get("delimiter", ",")
+        decimal = call.data.get("decimal", ".")
+        timezone = call.data.get("timezone")
+        date_format = call.data.get("date_format")
+        dry_run = call.data.get("dry_run", False)
+
+        _LOGGER.info(
+            "Starting CSV import for %s from %s (dry_run=%s)",
+            entity_id,
+            file_path,
+            dry_run,
+        )
+
+        try:
+            result = await async_import_csv(
+                self.hass,
+                self.data_manager,
+                entity_id,
+                file_path,
+                delimiter=delimiter,
+                decimal=decimal,
+                timezone=timezone,
+                date_format=date_format,
+                dry_run=dry_run,
+            )
+
+            _LOGGER.info(
+                "CSV import completed: %d processed, %d added, %d skipped, %d errors",
+                result.processed_count,
+                result.added_count,
+                result.skipped_count,
+                result.error_count,
+            )
+
+            if not result.success:
+                raise HomeAssistantError(
+                    f"CSV import completed with errors. "
+                    f"Processed: {result.processed_count}, "
+                    f"Added: {result.added_count}, "
+                    f"Errors: {result.error_count}"
+                )
+
+        except Exception as e:
+            _LOGGER.exception("Error during CSV import")
+            raise HomeAssistantError(f"CSV import failed: {e}") from e
+
+    async def _handle_validate_reading(self, call: ServiceCall) -> dict:
+        """Handle validate_reading service call."""
+        from .validation import ReadingValidator, ValidationError
+
+        entity_id = call.data[ATTR_ENTITY_ID]
+        value = call.data["value"]
+        timestamp = call.data.get("timestamp", dt_util.utcnow())
+        unit = call.data.get(ATTR_UNIT_OF_MEASUREMENT, "kWh")
+
+        # Ensure timestamp is timezone-aware
+        if timestamp is not None:
+            timestamp = dt_util.as_utc(timestamp)
+
+        # Create reading object
+        reading = Reading(
+            timestamp=timestamp,
+            value=value,
+            unit=unit,
+        )
+
+        try:
+            # Validate reading
+            ReadingValidator.validate_reading(reading)
+
+            # Check if reading already exists
+            existing = await self.data_manager.get_reading_by_timestamp(
+                entity_id, timestamp
+            )
+
+            if existing:
+                return {
+                    "valid": True,
+                    "warnings": [f"Reading already exists for {timestamp.isoformat()}"],
+                    "existing_value": existing.value,
+                    "provided_value": value,
+                }
+
+            return {
+                "valid": True,
+                "warnings": [],
+            }
+
+        except ValidationError as e:
+            return {
+                "valid": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            }
+        except Exception as e:
+            _LOGGER.exception("Error validating reading")
+            return {
+                "valid": False,
+                "error": f"Validation failed: {e}",
+                "error_type": type(e).__name__,
+            }
 
 
 async def async_setup_services(

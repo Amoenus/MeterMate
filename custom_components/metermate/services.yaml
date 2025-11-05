@@ -366,3 +366,103 @@ update_consumption_period:
       required: false
       selector:
         text:
+
+import_from_csv:
+  name: Import from CSV
+  description: Import multiple readings from a CSV file with validation
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity to import readings for
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    file_path:
+      name: File Path
+      description: Path to CSV file (relative to /config directory or absolute path)
+      required: true
+      example: "meter_readings.csv"
+      selector:
+        text:
+    delimiter:
+      name: Delimiter
+      description: Column separator character
+      required: false
+      default: ","
+      selector:
+        select:
+          options:
+            - label: "Comma (,)"
+              value: ","
+            - label: "Semicolon (;)"
+              value: ";"
+            - label: "Tab"
+              value: "\t"
+    decimal:
+      name: Decimal Separator
+      description: Decimal point character
+      required: false
+      default: "."
+      selector:
+        select:
+          options:
+            - label: "Period (.)"
+              value: "."
+            - label: "Comma (,)"
+              value: ","
+    timezone:
+      name: Timezone
+      description: Timezone for timestamps (defaults to Home Assistant timezone)
+      required: false
+      example: "America/Los_Angeles"
+      selector:
+        text:
+    date_format:
+      name: Date Format
+      description: strptime format for dates (defaults to ISO format)
+      required: false
+      example: "%Y-%m-%d %H:%M"
+      selector:
+        text:
+    dry_run:
+      name: Dry Run
+      description: If enabled, validates CSV without importing (test mode)
+      required: false
+      default: false
+      selector:
+        boolean:
+
+validate_reading:
+  name: Validate Reading
+  description: Validate a reading without adding it (returns validation result)
+  fields:
+    entity_id:
+      name: Entity ID
+      description: The meter sensor entity
+      required: true
+      selector:
+        entity:
+          integration: metermate
+    value:
+      name: Reading Value
+      description: The meter reading value to validate
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.001
+          mode: box
+    timestamp:
+      name: Reading Timestamp
+      description: When the reading was taken (defaults to now)
+      required: false
+      selector:
+        datetime:
+    unit:
+      name: Unit of Measurement
+      description: Unit for the reading (kWh, m³, gal, etc.)
+      required: false
+      default: kWh
+      selector:
+        text:

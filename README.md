@@ -38,6 +38,14 @@ MeterMate adds significant value by:
 
 ## ✨ Features
 
+### 🆕 New in v0.2.0
+
+- **CSV Import**: Bulk import historical data from CSV files ([Guide](docs/CSV_IMPORT.md))
+- **Reading Validation**: Validate readings before adding them
+- **Enhanced Error Messages**: Solution-oriented error messages that help you fix issues
+- **Comprehensive Validation**: Hour boundary, timezone, and value validation
+- **Better Documentation**: Complete guides and examples
+
 ### Core Capabilities
 - **Complete Data Management**: Full CRUD operations (Create, Read, Update, Delete)
 - **Multiple Data Entry Methods**: Cumulative meter readings and periodic consumption data
