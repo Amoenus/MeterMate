@@ -1,0 +1,274 @@
+# ADR-000: LLM-First Operations Model
+
+**Status**: ✅ Accepted
+**Date**: 2025-10-24
+**Deciders**: Primary Operator + LLM Co-maintainer
+**Tags**: `operations`, `automation`, `llm`, `collaboration`, `architecture`
+
+---
+
+## Context and Problem Statement
+
+The MeterMate has evolved from traditional manual operations to a sophisticated hybrid human-AI operational model. However, documentation and architectural decisions have historically positioned LLM agents as "assistants" or "tools" rather than recognizing their actual role as integral co-maintainers and the primary interaction layer for infrastructure management.
+
+**Core Questions:**
+- How should we formally recognize LLM agents' role in MeterMate operations?
+- What is the appropriate mental model for human-LLM collaboration?
+- How do we document and design systems to optimize for this partnership?
+- What are the implications for documentation, tooling, and operational procedures?
+
+---
+
+## Decision Drivers
+
+### Technical Reality
+- **90%+ of cluster operations** are performed through LLM-mediated interfaces (GitHub Copilot, AI assistants)
+- **All documentation** is designed with LLM consumption and generation in mind
+- **Troubleshooting and debugging** primarily conducted through LLM-guided procedures
+- **Code generation and infrastructure changes** are LLM-augmented or LLM-initiated
+
+### Operational Benefits
+- **Consistent execution** of complex multi-step procedures
+- **Context preservation** across operations spanning days or weeks
+- **Documentation enforcement** through tool-guided workflows
+- **Knowledge accessibility** for sole maintainer without extensive memorization
+- **Reduced cognitive load** for routine operations
+
+### Philosophical Shift
+- LLMs are not "assistants" but **co-maintainers** with complementary capabilities
+- Human provides strategic direction, validation, and domain expertise
+- LLM provides consistency, documentation adherence, and execution precision
+- Partnership model > master-servant model
+
+---
+
+## Considered Options
+
+### Option 1: Traditional "LLM as Tool" Model ❌
+**Description**: Continue treating LLMs as optional assistants or automation tools.
+
+**Pros:**
+- Simpler mental model
+- Less documentation overhead
+- Traditional operational paradigm
+
+**Cons:**
+- ❌ Misrepresents actual operational reality
+- ❌ Underutilizes LLM capabilities
+- ❌ Doesn't optimize documentation for primary use case
+- ❌ Creates cognitive dissonance between practice and documentation
+
+### Option 2: "LLM-First Operations Model" ✅ CHOSEN
+**Description**: Formally recognize LLM agents as first-class operational citizens and primary interaction layer, with human as strategic director and validator.
+
+**Pros:**
+- ✅ Accurately reflects current operational model
+- ✅ Optimizes documentation for actual usage patterns
+- ✅ Enables better human-LLM collaboration design
+- ✅ Recognizes complementary strengths of both parties
+- ✅ Future-proofs operational model for advancing AI capabilities
+
+**Cons:**
+- ⚠️ Requires documentation restructuring (already in progress)
+- ⚠️ Mental model shift for external viewers
+- ⚠️ Potential skepticism from traditional operations community
+
+### Option 3: "LLM-Only Operations" ❌
+**Description**: Position LLMs as fully autonomous operators with human oversight only.
+
+**Cons:**
+- ❌ Current technology limitations (validation, strategic thinking)
+- ❌ Single-user MeterMate requires human strategic direction
+- ❌ Critical decisions benefit from human domain expertise
+- ❌ Overestimates current LLM capabilities
+
+---
+
+## Decision Outcome
+
+**Chosen Option: LLM-First Operations Model**
+
+The MeterMate adopts a formal **LLM-First Operations Model** where:
+
+### Human Role (Strategic Director & Validator)
+- **Strategic Direction**: Sets objectives, priorities, and architectural direction
+- **Validation**: Reviews LLM-proposed changes for correctness and alignment
+- **Domain Expertise**: Provides context, business logic, and edge case knowledge
+- **Final Authority**: Makes ultimate decisions on infrastructure changes
+- **Experience Integration**: Incorporates lessons learned and operational intuition
+
+### LLM Role (Primary Operator & Executor)
+- **Primary Interaction Layer**: First point of contact for all operations
+- **Execution Engine**: Performs multi-step procedures with consistency
+- **Documentation Navigator**: Locates and applies relevant documentation
+- **Code Generator**: Creates and modifies infrastructure code and configurations
+- **Context Manager**: Maintains operational context across sessions
+- **Knowledge Base**: Accesses and applies accumulated documentation
+- **Tool Orchestrator**: Coordinates kubectl, git, and other operational tools
+
+### Partnership Model
+- **Collaborative Decision-Making**: Complex decisions made through human-LLM dialogue
+- **Mutual Dependency**: Each party's strengths compensate for the other's limitations
+- **Continuous Learning**: Human updates documentation, LLM applies updated knowledge
+- **Shared Ownership**: Both parties responsible for operational success
+
+---
+
+## Implementation Guidelines
+
+### 1. Documentation Design Principles
+
+**Primary Audience**: LLM agents with human validation
+- All documentation includes explicit **🤖 LLM Usage** guidance
+- Tool hints provided for every operational procedure
+- Step-by-step procedures optimized for LLM execution
+- Cross-references structured for LLM semantic navigation
+- Command examples with expected outputs for validation
+
+**Secondary Audience**: Human operators (for validation and strategic review)
+- High-level overviews for human understanding
+- Decision rationale and context preservation
+- Visual diagrams for architectural understanding
+
+### 2. ADR Decision Process
+
+All future ADRs should acknowledge LLM involvement:
+
+```markdown
+**Deciders**: Primary Operator + LLM Co-maintainer
+**Decision Process**:
+- Initial analysis by LLM agent (context gathering, option analysis)
+- Human-LLM dialogue on trade-offs and implications
+- Strategic decision by human operator
+- Implementation planning by LLM with human validation
+- Execution by LLM under human oversight
+```
+
+### 3. Operational Procedures
+
+**Standard Operating Model:**
+1. **Human**: Defines objective or identifies problem
+2. **LLM**: Gathers context, analyzes situation, proposes solution
+3. **Human**: Reviews proposal, provides strategic guidance
+4. **LLM**: Executes implementation with documentation
+5. **Human**: Validates results and operational impact
+6. **Both**: Update documentation with lessons learned
+
+### 4. Code and Configuration Standards
+
+**LLM-Optimized Patterns:**
+- Consistent naming conventions for easy LLM navigation
+- Semantic file organization for effective semantic search
+- Explicit cross-references for context building
+- Tool hints embedded in comments where appropriate
+- Validation commands included in all procedures
+
+### 5. Error Handling and Escalation
+
+**LLM Responsibilities:**
+- Initial troubleshooting using documented procedures
+- Context gathering and error analysis
+- Proposed resolution with risk assessment
+
+**Human Escalation Triggers:**
+- Novel error patterns not in documentation
+- Security-critical decisions
+- Strategic architectural changes
+- Cross-system impacts requiring business judgment
+
+---
+
+## Consequences
+
+### Positive Consequences
+
+✅ **Operational Efficiency**
+- Reduced time for routine operations
+- Consistent execution of complex procedures
+- Better documentation adherence
+
+✅ **Knowledge Management**
+- Documentation becomes living operational artifact
+- Continuous improvement through human-LLM collaboration
+- Knowledge preservation across time gaps
+
+✅ **Quality Improvement**
+- Fewer human errors in routine operations
+- Better validation through automated checks
+- Consistent application of best practices
+
+✅ **Maintainability**
+- Single-person MeterMate becomes sustainable
+- Complex systems remain manageable
+- Reduced cognitive load for sole operator
+
+### Negative Consequences & Mitigations
+
+⚠️ **LLM Dependency Risk**
+- **Risk**: Over-reliance on LLM availability
+- **Mitigation**: Maintain "break-glass" documentation for manual operations
+- **Mitigation**: Preserve traditional operational knowledge in ADRs
+
+⚠️ **Documentation Maintenance Burden**
+- **Risk**: Additional effort to maintain LLM-friendly documentation
+- **Mitigation**: LLM assists in documentation updates
+- **Mitigation**: Documentation updates amortized across operations
+
+⚠️ **Technology Evolution**
+- **Risk**: LLM capabilities and interfaces may change
+- **Mitigation**: Documentation includes general principles, not just specific LLM patterns
+- **Mitigation**: Regular review and updates as technology evolves
+
+⚠️ **External Understanding**
+- **Risk**: Others may not understand the operational model
+- **Mitigation**: Clear documentation of human-LLM roles and responsibilities
+- **Mitigation**: ADRs provide transparency into decision-making process
+
+---
+
+## Related Decisions
+
+- **ADR-001**: GitOps with ArgoCD - Automation foundation enabling LLM operations
+- **ADR-004**: Kyverno Policy Management - Validation layer for LLM-generated changes
+- **ADR-006**: Automated DNS Management - Eliminates manual DNS bottleneck for LLM operations
+- **ADR-012**: KCL Adoption Path - Code-as-configuration for LLM manipulation
+- **ADR-013**: Bare Metal Configuration Management - Extends code-based operations to infrastructure
+- **ADR-017**: Everything as Code Principle - Foundational design principle enabling LLM-First operations
+- **Documentation PRD**: LLM-optimized documentation architecture
+
+---
+
+## Implementation Status
+
+### Completed ✅
+- [x] LLM usage guidance added to key documentation files
+- [x] Tool hints embedded in operational runbooks
+- [x] Getting-started guides include LLM agent guides
+- [x] Reference documentation structured for LLM consumption
+
+### In Progress 🔄
+- [ ] Update all ADRs to acknowledge LLM involvement in decisions
+- [ ] Restructure README files to reflect partnership model
+- [ ] Create "LLM Operator's Handbook" as primary operational guide
+- [ ] Establish formal human-LLM decision workflow documentation
+
+### Planned 📋
+- [ ] Develop LLM-specific troubleshooting decision trees
+- [ ] Create validation frameworks for LLM-proposed changes
+- [ ] Establish metrics for measuring human-LLM operational efficiency
+- [ ] Document escalation criteria for human intervention
+
+---
+
+## Notes
+
+This ADR represents a significant shift in how we conceptualize and document MeterMate operations. It acknowledges the reality that modern infrastructure management increasingly occurs through human-AI collaboration, and that optimizing for this partnership creates better outcomes than treating AI as merely a tool.
+
+The LLM-First model does not diminish the human operator's role—rather, it elevates it to strategic direction and validation while leveraging AI's strengths in execution consistency and documentation adherence.
+
+**Key Insight**: The best MeterMate operations emerge not from human alone or AI alone, but from the synergistic partnership where each party contributes their unique strengths.
+
+---
+
+**Last Updated**: 2025-10-24
+**Review Cycle**: Quarterly (as LLM capabilities evolve)
