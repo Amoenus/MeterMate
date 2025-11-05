@@ -18,3 +18,4 @@ config/*
 !config/configuration.yaml
 .ha_token
 node_modules
+uv.lock
