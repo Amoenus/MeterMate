@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.2/.schema/devbox.schema.json",
   "packages": [
     "python@3.13",
-    "uv@0.8.23",
+    "uv@0.12.5",
     "git@2.51.0",
     "curl@8.16.0",
     "ruff@0.14.3",
